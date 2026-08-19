@@ -380,6 +380,7 @@ check-booster-pack-staging: ## Validate local staged Booster Pack release before
 		--tag "$(BOOSTER_RELEASE_TAG)" \
 		--extra-ok release-body.md \
 		--docs-url "$(BOOSTER_DOCS_URL)" \
+		--require-validation-passed \
 		--require-release-body
 
 # Validate assets downloaded from GitHub. release-body.md is not uploaded as an
@@ -389,7 +390,8 @@ check-booster-pack-assets: ## Validate Booster Pack assets downloaded from GitHu
 		"$(BOOSTER_OUTPUT_DIR)" \
 		--tag "$(BOOSTER_RELEASE_TAG)" \
 		--extra-ok release-body.md \
-		--docs-url "$(BOOSTER_DOCS_URL)"
+		--docs-url "$(BOOSTER_DOCS_URL)" \
+		--require-validation-passed
 
 # Show draft release metadata for a final read-only human sanity check.
 inspect-booster-pack-release: ## Inspect draft Booster Pack release before publishing

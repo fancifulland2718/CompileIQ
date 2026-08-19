@@ -153,8 +153,8 @@ assert isinstance(score, (int, float)) and score == score   # not NaN
 
 # ACF-injection canary using the Debug pack (downloaded once)
 from compileiq.utils.helpers import load_compiler_config
-O0_HEX = load_compiler_config("debug-pack/O0.acf")
-O3_HEX = load_compiler_config("debug-pack/O3.acf")
+O0_HEX = load_compiler_config("booster-pack-debug/ptxas_opt0.acf")
+O3_HEX = load_compiler_config("booster-pack-debug/ptxas_opt3.acf")
 
 baseline = objective({})                  # BASELINE_CONFIG path
 score_O0 = objective(O0_HEX)
