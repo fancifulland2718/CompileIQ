@@ -35,7 +35,7 @@ def sha256_file(path: pathlib.Path) -> str:
 
 
 def json_bytes(value: object) -> bytes:
-    return (json.dumps(value, indent=2) + "\n").encode("utf-8")
+    return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 def _mapping(value: object, context: str) -> dict[str, object]:
@@ -84,13 +84,14 @@ def _compact_acf_entries(manifest: Mapping[str, object]) -> list[dict[str, objec
     result: list[dict[str, object]] = []
     for index, entry in enumerate(_list(manifest.get("acfs"), "manifest acfs")):
         acf = _mapping(entry, f"manifest acfs[{index}]")
-        result.append(
-            {
-                "filename": acf.get("filename"),
-                "sha256": acf.get("sha256"),
-                "size_bytes": acf.get("size_bytes"),
-            }
-        )
+        compact = {
+            "filename": acf.get("filename"),
+            "sha256": acf.get("sha256"),
+            "size_bytes": acf.get("size_bytes"),
+        }
+        if "compiler_stages" in acf:
+            compact["compiler_stages"] = acf["compiler_stages"]
+        result.append(compact)
     return result
 
 

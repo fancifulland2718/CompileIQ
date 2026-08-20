@@ -25,12 +25,21 @@ def _json_bytes(value: object) -> bytes:
     return (json.dumps(value, indent=2) + "\n").encode("utf-8")
 
 
-def _write_valid_release(asset_dir: pathlib.Path, tag: str) -> None:
+def _write_valid_release(
+    asset_dir: pathlib.Path,
+    tag: str,
+    *,
+    compiler_stages: list[str] | None = None,
+    controls_stage: str = "ptxas",
+    validation_status: str = "passed",
+) -> None:
+    compiler_stages = compiler_stages or ["ptxas"]
     acf_payload = b"controls"
     acf = {
         "filename": "candidate.acf",
         "sha256": verifier.sha256_bytes(acf_payload),
         "size_bytes": len(acf_payload),
+        "compiler_stages": compiler_stages,
     }
     manifest = {
         "schema_version": 1,
@@ -39,6 +48,12 @@ def _write_valid_release(asset_dir: pathlib.Path, tag: str) -> None:
         "pack_id": "debug-pack",
         "pack_type": "diagnostic",
         "display_name": "Debug Pack",
+        "controls_stage": controls_stage,
+        "validation_summary": {
+            "status": validation_status,
+            "evidence": "Exact candidate validation passed",
+            "notes": ["Validated before release packaging"],
+        },
         "acfs": [acf],
     }
     manifest_payload = _json_bytes(manifest)
@@ -57,6 +72,8 @@ def _write_valid_release(asset_dir: pathlib.Path, tag: str) -> None:
                 "pack_id": "debug-pack",
                 "pack_type": "diagnostic",
                 "display_name": "Debug Pack",
+                "controls_stage": controls_stage,
+                "validation_summary": manifest["validation_summary"],
                 "acf_count": 1,
                 "acfs": [acf],
                 "artifact_name": zip_path.name,
@@ -82,6 +99,72 @@ def test_validate_release_assets_accepts_valid_bundle(tmp_path):
     _write_valid_release(tmp_path, tag)
 
     assert verifier.validate_release_assets(tmp_path, tag) == []
+
+
+def test_stage_metadata_requires_explicit_map_for_mixed_pack():
+    errors: list[str] = []
+    verifier._validate_stage_metadata(
+        "debug-pack",
+        "both",
+        {
+            "nvvm.acf": {"filename": "nvvm.acf"},
+            "ptxas.acf": {"filename": "ptxas.acf", "compiler_stages": ["ptxas"]},
+        },
+        errors,
+    )
+    assert errors == [
+        "debug-pack: controls_stage 'both' requires compiler_stages for every ACF: "
+        "['nvvm.acf']"
+    ]
+
+
+def test_stage_metadata_accepts_nvcc_ptxas_and_combined_entries():
+    errors: list[str] = []
+    verifier._validate_stage_metadata(
+        "debug-pack",
+        "both",
+        {
+            "nvvm.acf": {"compiler_stages": ["nvcc"]},
+            "nvvm_ptxas.acf": {"compiler_stages": ["nvcc", "ptxas"]},
+            "ptxas.acf": {"compiler_stages": ["ptxas"]},
+        },
+        errors,
+    )
+    assert errors == []
+
+
+def test_validate_release_assets_rejects_catalog_manifest_stage_mismatch(tmp_path):
+    tag = "booster-packs-2026.05.21"
+    _write_valid_release(tmp_path, tag)
+    catalog_path = tmp_path / "booster-pack-catalog.json"
+    catalog = json.loads(catalog_path.read_text())
+    catalog["packs"][0]["controls_stage"] = "nvcc"
+    catalog_path.write_bytes(_json_bytes(catalog))
+    zip_path = tmp_path / "booster-pack-debug.zip"
+    (tmp_path / "SHA256SUMS.txt").write_text(
+        f"{verifier.sha256_file(catalog_path)}  {catalog_path.name}\n"
+        f"{verifier.sha256_file(zip_path)}  {zip_path.name}\n"
+    )
+
+    errors = verifier.validate_release_assets(tmp_path, tag)
+
+    assert (
+        "debug-pack: catalog controls_stage 'nvcc' differs from manifest 'ptxas'"
+    ) in errors
+
+
+def test_validate_release_assets_final_gate_rejects_pending_validation(tmp_path):
+    tag = "booster-packs-2026.05.21"
+    _write_valid_release(tmp_path, tag, validation_status="pending")
+
+    assert verifier.validate_release_assets(tmp_path, tag) == []
+    errors = verifier.validate_release_assets(
+        tmp_path,
+        tag,
+        require_validation_passed=True,
+    )
+
+    assert "debug-pack: validation status must be 'passed', got 'pending'" in errors
 
 
 def test_main_prints_pass_on_valid_bundle(tmp_path, capsys):

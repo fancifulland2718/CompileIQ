@@ -16,6 +16,7 @@ from collections.abc import Iterable
 HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 FIXME_RE = re.compile(r"\bFIXME\b", re.IGNORECASE)
 DEFAULT_DOCS_URL = "https://nvidia.github.io/CompileIQ/stable/booster_packs.html"
+ALLOWED_COMPILER_STAGES = {"nvcc", "ptxas"}
 
 
 def sha256_bytes(payload: bytes) -> str:
@@ -131,7 +132,62 @@ def _entry_map(
         if not isinstance(size, int) or size <= 0:
             errors.append(f"{entry_context}: invalid size_bytes for {filename}")
 
+        compiler_stages = entry_obj.get("compiler_stages")
+        if compiler_stages is not None:
+            if not isinstance(compiler_stages, list) or not compiler_stages:
+                errors.append(f"{entry_context}: compiler_stages must be a non-empty list")
+            elif (
+                not all(stage in ALLOWED_COMPILER_STAGES for stage in compiler_stages)
+                or compiler_stages != sorted(set(compiler_stages))
+            ):
+                errors.append(
+                    f"{entry_context}: compiler_stages must be sorted, unique, and use "
+                    "only nvcc or ptxas"
+                )
+
     return result
+
+
+def _validate_stage_metadata(
+    pack_id: str,
+    controls_stage: object,
+    entries: dict[str, dict[str, object]],
+    errors: list[str],
+) -> None:
+    if controls_stage is None:
+        errors.append(f"{pack_id}: missing controls_stage")
+        return
+    if controls_stage not in {"nvcc", "ptxas", "both"}:
+        errors.append(f"{pack_id}: invalid controls_stage {controls_stage!r}")
+        return
+
+    if controls_stage == "both":
+        missing = sorted(
+            filename for filename, entry in entries.items() if "compiler_stages" not in entry
+        )
+        if missing:
+            errors.append(
+                f"{pack_id}: controls_stage 'both' requires compiler_stages for every ACF: "
+                f"{missing}"
+            )
+            return
+        stage_union = {
+            stage
+            for entry in entries.values()
+            for stage in entry.get("compiler_stages", [])
+            if isinstance(stage, str)
+        }
+        if stage_union != ALLOWED_COMPILER_STAGES:
+            errors.append(f"{pack_id}: controls_stage 'both' must cover nvcc and ptxas ACFs")
+        return
+
+    for filename, entry in entries.items():
+        compiler_stages = entry.get("compiler_stages")
+        if compiler_stages is not None and compiler_stages != [controls_stage]:
+            errors.append(
+                f"{pack_id}: {filename} compiler_stages must match controls_stage "
+                f"{controls_stage!r}"
+            )
 
 
 def _validate_checksum_file(
@@ -180,6 +236,7 @@ def _validate_pack(
     catalog_version: object,
     pack: dict[str, object],
     checksums: dict[str, str],
+    require_validation_passed: bool,
     errors: list[str],
 ) -> None:
     pack_id = pack.get("pack_id")
@@ -258,6 +315,19 @@ def _validate_pack(
             if manifest_obj.get("pack_id") != pack_id:
                 errors.append(f"{pack_id}: manifest pack_id is {manifest_obj.get('pack_id')!r}")
 
+            catalog_validation = pack.get("validation_summary")
+            manifest_validation = manifest_obj.get("validation_summary")
+            if catalog_validation != manifest_validation:
+                errors.append(f"{pack_id}: catalog and manifest validation_summary differ")
+            if require_validation_passed:
+                if not isinstance(manifest_validation, dict):
+                    errors.append(f"{pack_id}: manifest validation_summary must be an object")
+                elif manifest_validation.get("status") != "passed":
+                    errors.append(
+                        f"{pack_id}: validation status must be 'passed', got "
+                        f"{manifest_validation.get('status')!r}"
+                    )
+
             catalog_acfs = _entry_map(pack.get("acfs"), f"{pack_id}: catalog acfs", errors)
             manifest_acfs = _entry_map(
                 manifest_obj.get("acfs"),
@@ -269,6 +339,24 @@ def _validate_pack(
                     f"{pack_id}: catalog and manifest ACF filenames differ: "
                     f"catalog={sorted(catalog_acfs)}, manifest={sorted(manifest_acfs)}"
                 )
+
+            for filename in sorted(set(catalog_acfs) & set(manifest_acfs)):
+                if catalog_acfs[filename].get("compiler_stages") != manifest_acfs[filename].get(
+                    "compiler_stages"
+                ):
+                    errors.append(
+                        f"{pack_id}: catalog and manifest compiler_stages differ for {filename}"
+                    )
+
+            catalog_controls_stage = pack.get("controls_stage")
+            manifest_controls_stage = manifest_obj.get("controls_stage")
+            if catalog_controls_stage != manifest_controls_stage:
+                errors.append(
+                    f"{pack_id}: catalog controls_stage {catalog_controls_stage!r} differs "
+                    f"from manifest {manifest_controls_stage!r}"
+                )
+            _validate_stage_metadata(pack_id, catalog_controls_stage, catalog_acfs, errors)
+            _validate_stage_metadata(pack_id, manifest_controls_stage, manifest_acfs, errors)
 
             acf_count = pack.get("acf_count")
             if isinstance(acf_count, int) and manifest_acfs and acf_count != len(manifest_acfs):
@@ -348,6 +436,7 @@ def validate_release_assets(
     extra_ok: Iterable[str] = (),
     docs_url: str = DEFAULT_DOCS_URL,
     require_release_body: bool = False,
+    require_validation_passed: bool = False,
 ) -> list[str]:
     """Return validation errors for a Booster Pack release asset directory."""
     errors: list[str] = []
@@ -399,7 +488,15 @@ def validate_release_assets(
                 errors.append(f"duplicate artifact_name {artifact_name}")
             seen_artifacts.add(artifact_name)
 
-        _validate_pack(asset_dir, tag, catalog_version, pack_obj, checksums, errors)
+        _validate_pack(
+            asset_dir,
+            tag,
+            catalog_version,
+            pack_obj,
+            checksums,
+            require_validation_passed,
+            errors,
+        )
 
     _validate_release_body(asset_dir, catalog_obj, docs_url, require_release_body, errors)
 
@@ -436,6 +533,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Require release-body.md and validate its public docs URL and asset names.",
     )
+    parser.add_argument(
+        "--require-validation-passed",
+        action="store_true",
+        help="Require every pack manifest validation_summary.status to be passed.",
+    )
     args = parser.parse_args(argv)
 
     errors = validate_release_assets(
@@ -444,6 +546,7 @@ def main(argv: list[str] | None = None) -> int:
         args.extra_ok,
         args.docs_url,
         args.require_release_body,
+        args.require_validation_passed,
     )
     if errors:
         print(f"FAIL: Booster Pack release validation failed for {args.tag}.", file=sys.stderr)

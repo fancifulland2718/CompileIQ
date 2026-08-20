@@ -52,8 +52,9 @@ Authoritative narrative: `docs/booster_packs.md`, `docs/flashinfer_booster.md`.
 | `booster-pack-helion.zip` | Helion FP8 Quantization, Causal Depthwise Convolution, Gated DeltaNet Forward | Has shown benefit on FlashInfer `BatchDecodeWithPagedKVCacheWrapper`; related attention workloads worth testing. |
 | `booster-pack-debug.zip` | Diagnostic ACFs (`O0`, `O3`, others that disable or alter selected optimizations) | Not for speed; for **debugging**. Use the O0/O3 canary below before trusting any other pack. |
 
-The public release shape is documented in `docs/booster_packs.md`. There is no
-runtime download API today. Don't invent one.
+The public release shape is documented in `docs/booster_packs.md`. Read each
+candidate's `compiler_stages` from its pack manifest and use every listed stage.
+There is no runtime download API today. Don't invent one.
 
 ## Steps
 
@@ -64,9 +65,9 @@ Helion, FlashInfer's `flashinfer_cubin`/`flashinfer_jit_cache`, NVCC build
 cache) serving a stale binary that ignored the ACF. The Debug pack has two
 ACFs with predictable, opposite-direction signatures:
 
-- **`O0` ACF**: forces unoptimized compilation. Applied → expect a **measurable
+- **`ptxas_opt0.acf`**: forces unoptimized PTXAS compilation. Applied → expect a **measurable
   regression** (often 2-10x slower) vs. baseline.
-- **`O3` ACF**: forces the default optimization level. Applied → expect to
+- **`ptxas_opt3.acf`**: forces the default PTXAS optimization level. Applied → expect to
   **match baseline** (the no-ACF default is already `-O3`).
 
 ```bash
@@ -74,10 +75,10 @@ ACFs with predictable, opposite-direction signatures:
 T_BASE_MS=$(./run-benchmark.sh)
 
 # O0 must regress
-PTXAS_OPTIONS="--apply-controls=debug-pack/O0.acf" T_O0_MS=$(./run-benchmark.sh)
+PTXAS_OPTIONS="--apply-controls=booster-pack-debug/ptxas_opt0.acf" T_O0_MS=$(./run-benchmark.sh)
 
 # O3 must match baseline
-PTXAS_OPTIONS="--apply-controls=debug-pack/O3.acf" T_O3_MS=$(./run-benchmark.sh)
+PTXAS_OPTIONS="--apply-controls=booster-pack-debug/ptxas_opt3.acf" T_O3_MS=$(./run-benchmark.sh)
 
 python -c "
 import sys

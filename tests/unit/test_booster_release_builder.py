@@ -56,6 +56,7 @@ def _write_pack_zip(
                 "filename": "candidate.acf",
                 "sha256": builder.sha256_bytes(payload),
                 "size_bytes": len(payload),
+                "compiler_stages": ["ptxas"],
             }
         ],
     }
@@ -121,6 +122,7 @@ def test_build_release_generates_valid_stable_docs_bundle(tmp_path):
     assert catalog["generated_at"] == "2026-05-21T00:00:00Z"
     assert catalog["packs"][0]["artifact_name"] == "booster-pack-debug.zip"
     assert catalog["packs"][0]["acf_count"] == 1
+    assert catalog["packs"][0]["acfs"][0]["compiler_stages"] == ["ptxas"]
 
     release_body = (output_dir / "release-body.md").read_text()
     assert "## Booster Pack Catalog Release" in release_body
