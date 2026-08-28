@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 from unittest.mock import MagicMock
 import pytest
 from pydantic import ValidationError
@@ -250,3 +253,17 @@ class TestPairedIsolatedWorker:
                 params_ids=(1,),
                 num_workers=2,
             )
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows spawn policy")
+def test_explicit_windows_spawn_does_not_emit_fork_warning():
+    env = os.environ.copy()
+    env["CIQ_PROCESS_MODE"] = "spawn"
+    completed = subprocess.run(
+        [sys.executable, "-W", "always", "-c", "import compileiq.worker"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "Fork multiprocessing is not available" not in completed.stderr

@@ -32,10 +32,11 @@ if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
 else:
     mp_mode = os.environ.get("CIQ_PROCESS_MODE", "forkserver")
     if sys.platform == "win32":
-        if "CIQ_PROCESS_MODE" in os.environ:
+        if mp_mode != "spawn":
             warnings.warn(
                 "Fork multiprocessing is not available on Windows. Switching to spawn mode."
-                "Set the environment variable `CIQ_PROCESS_MODE` to 'spawn' to avoid this warning.",
+                " Set the environment variable `CIQ_PROCESS_MODE` to 'spawn' to avoid "
+                "this warning.",
                 RuntimeWarning,
             )
         mp_mode = "spawn"
