@@ -6,6 +6,7 @@ import multiprocessing
 from multiprocessing.connection import Connection, wait as mp_wait
 from multiprocessing.synchronize import Event
 import queue
+import statistics
 import traceback
 import warnings
 import asyncio
@@ -583,6 +584,175 @@ class IsoMultiProcessWorker(Worker):
                     recv_conn.close()
 
         return resulting_scores
+
+
+class PairedIsolatedWorker(IsoMultiProcessWorker):
+    """Evaluate every candidate against a contemporaneous isolated baseline.
+
+    This worker is intended for noisy, single-GPU latency objectives.  Each
+    candidate is measured in balanced AB/BA blocks, with a fresh process for
+    every baseline and candidate measurement.  The optimizer receives the
+    aggregate candidate/baseline ratio instead of an absolute time whose
+    meaning may drift over the lifetime of the search.
+
+    The objective must accept :data:`BASELINE_CONFIG` and return the same
+    score shape as it does for a candidate.  CompileIQ normalization must be
+    disabled because this worker performs local paired normalization.
+    """
+
+    def __init__(
+        self,
+        cache_folder: str | os.PathLike,
+        normalize: bool = False,
+        tracker: BaseTracker | None = None,
+    ):
+        if normalize:
+            raise ValueError(
+                "PairedIsolatedWorker requires normalize=False; it returns "
+                "paired candidate/baseline ratios directly."
+            )
+        super().__init__(
+            cache_folder=cache_folder,
+            normalize=False,
+            tracker=tracker,
+        )
+
+    @classmethod
+    def create(
+        cls,
+        cache_folder: str | os.PathLike,
+        normalize: bool,
+        tracker: BaseTracker | None,
+    ) -> "PairedIsolatedWorker":
+        return cls(cache_folder=cache_folder, normalize=normalize, tracker=tracker)
+
+    @staticmethod
+    def _as_objective_values(score: Score) -> tuple[int | float | str, ...]:
+        if score.num_objectives == 1:
+            assert isinstance(score.score, (int, float, str))
+            return (score.score,)
+        assert isinstance(score.score, (list, tuple))
+        return tuple(score.score)
+
+    @staticmethod
+    def _aggregate_ratios(
+        ratios: list[tuple[float, ...]],
+        *,
+        aggregate: str,
+        num_objectives: int,
+    ) -> int | float | str | tuple[int | float | str, ...]:
+        if not ratios:
+            return Worker.invalidate_score(num_objectives)
+        columns = tuple(zip(*ratios))
+        if aggregate == "median":
+            values = tuple(float(statistics.median(column)) for column in columns)
+        elif aggregate == "maximum":
+            values = tuple(float(max(column)) for column in columns)
+        else:
+            raise ValueError("paired_aggregate must be 'median' or 'maximum'")
+        return values[0] if num_objectives == 1 else values
+
+    def run(
+        self,
+        *,
+        function: Callable,
+        params_pool: Sequence[ParamArg],
+        params_ids: Sequence[int],
+        num_function_returns: int = 1,
+        num_workers: int = 1,
+        task_timeout: Optional[int | float] = None,
+        paired_repeats: int = 2,
+        paired_aggregate: str = "median",
+        **kwargs,
+    ) -> List[Score]:
+        if num_workers != 1:
+            raise ValueError(
+                "PairedIsolatedWorker requires num_workers=1 so paired GPU "
+                "measurements cannot overlap."
+            )
+        if paired_repeats < 2 or paired_repeats % 2:
+            raise ValueError("paired_repeats must be a positive even integer >= 2")
+        if len(params_pool) != len(params_ids):
+            raise ValueError("params_pool and params_ids must have the same length")
+
+        results: List[Score] = []
+        for params, param_id in zip(params_pool, params_ids):
+            ratios: list[tuple[float, ...]] = []
+            baseline_values: list[tuple[int | float | str, ...]] = []
+            candidate_values: list[tuple[int | float | str, ...]] = []
+            orders: list[str] = []
+            failed = False
+
+            for repeat in range(paired_repeats):
+                order = "ab" if repeat % 2 == 0 else "ba"
+                orders.append(order)
+                inputs = (
+                    (("baseline", BASELINE_CONFIG), ("candidate", params))
+                    if order == "ab"
+                    else (("candidate", params), ("baseline", BASELINE_CONFIG))
+                )
+                pair: dict[str, Score] = {}
+                for route, route_params in inputs:
+                    route_id = f"paired:{param_id}:{repeat}:{route}"
+                    measured = self.handle_isolation(
+                        [(route_id, route_params)],
+                        1,
+                        function,
+                        num_function_returns,
+                        task_timeout,
+                    )
+                    if len(measured) != 1:
+                        raise RuntimeError("paired measurement did not return exactly one score")
+                    pair[route] = measured[0]
+
+                baseline = pair["baseline"]
+                candidate = pair["candidate"]
+                baseline_values.append(self._as_objective_values(baseline))
+                candidate_values.append(self._as_objective_values(candidate))
+                if baseline.failed or candidate.failed:
+                    failed = True
+                    break
+
+                normalized = self.normalize_scores(candidate.score, baseline.score)
+                normalized_values = (
+                    (normalized,) if num_function_returns == 1 else tuple(normalized)
+                )
+                if INVALID_SCORE in normalized_values:
+                    failed = True
+                    break
+                ratios.append(tuple(float(value) for value in normalized_values))
+
+            aggregate_score = (
+                Worker.invalidate_score(num_function_returns)
+                if failed
+                else self._aggregate_ratios(
+                    ratios,
+                    aggregate=paired_aggregate,
+                    num_objectives=num_function_returns,
+                )
+            )
+            metadata = json.dumps(
+                {
+                    "worker": "paired_isolated",
+                    "paired_repeats": paired_repeats,
+                    "paired_aggregate": paired_aggregate,
+                    "orders": orders,
+                    "baseline_scores": baseline_values,
+                    "candidate_scores": candidate_values,
+                    "ratios": ratios,
+                }
+            )
+            results.append(
+                Score(
+                    score=aggregate_score,
+                    metadata=metadata,
+                    params=params,
+                    param_id=param_id,
+                    num_objectives=num_function_returns,
+                )
+            )
+
+        return results
 
 
 # TODO: Add Thread Worker for real threads (3.14+)

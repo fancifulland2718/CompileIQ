@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock
 import pytest
 from pydantic import ValidationError
@@ -6,10 +7,17 @@ from compileiq.types import (
     WorkerTypes,
     INVALID_SCORE,
 )
-from compileiq.worker import MultiProcessWorker, RayWorker, AsyncWorker, IsoMultiProcessWorker
+from compileiq.worker import (
+    AsyncWorker,
+    IsoMultiProcessWorker,
+    MultiProcessWorker,
+    PairedIsolatedWorker,
+    RayWorker,
+)
 from compileiq.ciq import Search
 from compileiq.search_spaces import base as ss
 from compileiq.types import SearchConfiguration
+from compileiq.utils.validation import Score
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +103,14 @@ class TestWorkerCreate:
         w = IsoMultiProcessWorker.create(cache_folder="/tmp", normalize=False, tracker=None)
         assert isinstance(w, IsoMultiProcessWorker)
 
+    def test_paired_isolated_create(self):
+        w = PairedIsolatedWorker.create(cache_folder="/tmp", normalize=False, tracker=None)
+        assert isinstance(w, PairedIsolatedWorker)
+
+    def test_paired_isolated_rejects_compileiq_normalization(self):
+        with pytest.raises(ValueError, match="normalize=False"):
+            PairedIsolatedWorker.create(cache_folder="/tmp", normalize=True, tracker=None)
+
     def test_ray_create(self):
         w = RayWorker.create(cache_folder="/tmp", normalize=True, tracker=None)
         assert isinstance(w, RayWorker)
@@ -155,3 +171,82 @@ class TestNormalizeScores:
         result = Worker.normalize_scores([10.0, 5.0], [0, 5.0])
         assert result[0] == INVALID_SCORE
         assert result[1] == 1.0
+
+
+class TestPairedIsolatedWorker:
+    @staticmethod
+    def _score(param_id, params, value):
+        return Score(
+            score=value,
+            params=params,
+            param_id=param_id,
+            num_objectives=1,
+        )
+
+    def test_balances_ab_ba_and_returns_median_ratio(self, mocker):
+        worker = PairedIsolatedWorker(cache_folder="/tmp")
+        calls = []
+        baseline_values = iter((10.0, 20.0))
+        candidate_values = iter((8.0, 16.0))
+
+        def fake_isolation(tasks, *_args, **_kwargs):
+            param_id, params = tasks[0]
+            route = "baseline" if params == {} else "candidate"
+            calls.append(route)
+            value = next(baseline_values if route == "baseline" else candidate_values)
+            return [self._score(param_id, params, value)]
+
+        mocker.patch.object(worker, "handle_isolation", side_effect=fake_isolation)
+        result = worker.run(
+            function=lambda _: 0.0,
+            params_pool=({"x": 1},),
+            params_ids=(7,),
+            paired_repeats=2,
+        )
+
+        assert calls == ["baseline", "candidate", "candidate", "baseline"]
+        assert len(result) == 1
+        assert result[0].score == pytest.approx(0.8)
+        metadata = json.loads(result[0].metadata)
+        assert metadata["orders"] == ["ab", "ba"]
+        assert metadata["ratios"] == [[0.8], [0.8]]
+
+    def test_maximum_aggregate_is_fail_closed(self, mocker):
+        worker = PairedIsolatedWorker(cache_folder="/tmp")
+        values = iter((10.0, 8.0, 12.6, 12.0))
+
+        def fake_isolation(tasks, *_args, **_kwargs):
+            param_id, params = tasks[0]
+            return [self._score(param_id, params, next(values))]
+
+        mocker.patch.object(worker, "handle_isolation", side_effect=fake_isolation)
+        result = worker.run(
+            function=lambda _: 0.0,
+            params_pool=({"x": 1},),
+            params_ids=(3,),
+            paired_repeats=2,
+            paired_aggregate="maximum",
+        )
+
+        assert result[0].score == pytest.approx(1.05)
+
+    @pytest.mark.parametrize("repeats", [0, 1, 3])
+    def test_rejects_unbalanced_repeat_count(self, repeats):
+        worker = PairedIsolatedWorker(cache_folder="/tmp")
+        with pytest.raises(ValueError, match="even integer"):
+            worker.run(
+                function=lambda _: 1.0,
+                params_pool=({"x": 1},),
+                params_ids=(1,),
+                paired_repeats=repeats,
+            )
+
+    def test_rejects_parallel_gpu_measurement(self):
+        worker = PairedIsolatedWorker(cache_folder="/tmp")
+        with pytest.raises(ValueError, match="num_workers=1"):
+            worker.run(
+                function=lambda _: 1.0,
+                params_pool=({"x": 1},),
+                params_ids=(1,),
+                num_workers=2,
+            )
