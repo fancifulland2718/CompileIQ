@@ -1,11 +1,11 @@
 [tool.poetry]
 name = "compileiq"
-version = "1.0.0dev1"
+version = "1.0.0dev1+taichiforge.opaque1"
 description = "NVIDIA compiler control optimization engine."
 authors = ["NVIDIA Corporation"]
 maintainers = ["CompileIQ Team <compileiq@nvidia.com>"]
 readme = "README.md"
-repository = "https://github.com/NVIDIA/CompileIQ"
+repository = "https://github.com/fancifulland2718/CompileIQ"
 documentation = "https://github.com/NVIDIA/CompileIQ/blob/main/README.md"
 packages = [{ include = "compileiq", format = "wheel" }]
 include = [

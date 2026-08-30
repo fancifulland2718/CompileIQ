@@ -42,6 +42,7 @@ from compileiq.types import (
     DefaultTrackerConfig,
 )
 from compileiq.search_spaces.compilers import SearchSpaceProvider
+from compileiq.recipes import OpaqueRecipeDomainV1
 from compileiq.results import SearchResult
 from compileiq.core.core_comms import CoreIPC, initialize_socket
 from compileiq.core.core_types import (
@@ -65,6 +66,7 @@ SearchSpaceInput: TypeAlias = (
     | pathlib.Path
     | List[Dict | pathlib.Path | SearchSpaceProvider]
     | SearchSpaceProvider
+    | OpaqueRecipeDomainV1
 )
 SearchConfigInput: TypeAlias = Dict[str, Any] | SearchConfiguration | pathlib.Path
 ResolvedSearchSpaceInput: TypeAlias = Dict[str, Any] | pathlib.Path | List[Dict | pathlib.Path]
@@ -102,7 +104,8 @@ class Search(BaseModel):
             "The user search space for CompileIQ to explore. "
             "The objective function will receive a single set following this declaration. "
             "Accepted values: a dict mapping string keys to compileiq search_spaces functions, "
-            "a path to an existing search-space file, or a SearchSpaceProvider instance."
+            "a path to an existing search-space file, a SearchSpaceProvider instance, or an "
+            "OpaqueRecipeDomainV1."
         )
     )
     search_config: SearchConfigInput = Field(
@@ -178,9 +181,12 @@ class Search(BaseModel):
     _result: SearchResult = PrivateAttr()
     _using_file_backed_search_space: bool | list[bool] = False
     _multi_config: bool = False
-    _search_space_resolution_metadata: list[SearchSpaceResolutionMetadataDict] | None = (
-        PrivateAttr(default=None)
+    _search_space_resolution_metadata: list[SearchSpaceResolutionMetadataDict] | None = PrivateAttr(
+        default=None
     )
+    _opaque_recipe_domain: OpaqueRecipeDomainV1 | None = PrivateAttr(default=None)
+    _opaque_recipe_capability: dict[str, object] | None = PrivateAttr(default=None)
+    _opaque_recipe_audit_by_param_id: dict[int, dict[str, str]] = PrivateAttr(default_factory=dict)
 
     # Cache directory management
     _base_cache_dir: Optional[pathlib.Path] = PrivateAttr(default=None)
@@ -259,6 +265,26 @@ class Search(BaseModel):
         # Preparing search space - resolve SearchSpaceProvider instances.
         metadata_records: list[SearchSpaceResolutionMetadataDict] = []
 
+        if isinstance(self.search_space, OpaqueRecipeDomainV1):
+            from compileiq.forge_support import forge_recipe_search_capability
+
+            domain = self.search_space
+            capability = forge_recipe_search_capability().as_dict()
+            required = {
+                "compileiq_capability_id": capability["capability_id"],
+                "compileiq_core_commit": capability["core_commit"],
+                "compileiq_core_lock": capability["core_lock"],
+            }
+            actual = {name: getattr(domain, name) for name in required}
+            if actual != required:
+                raise RuntimeError(
+                    "Opaque recipe domain is not bound to this exact modified "
+                    "CompileIQ capability and bundled core"
+                )
+            self._opaque_recipe_domain = domain
+            self._opaque_recipe_capability = dict(capability)
+            self.search_space = domain.to_search_space()
+
         def resolve_provider(
             search_space: Dict[str, Any] | pathlib.Path | SearchSpaceProvider,
         ) -> Dict[str, Any] | pathlib.Path:
@@ -292,7 +318,13 @@ class Search(BaseModel):
             self._using_file_backed_search_space = isinstance(self.search_space, pathlib.Path)
 
         # Initializing Core IPC
-        self._core_ipc = CoreIPC()
+        if self._opaque_recipe_capability is None:
+            self._core_ipc = CoreIPC()
+        else:
+            self._core_ipc = CoreIPC(
+                required_core_commit=str(self._opaque_recipe_capability["core_commit"]),
+                required_core_lock=str(self._opaque_recipe_capability["core_lock"]),
+            )
 
         if self.tracker_config.type is None:
             raise ValueError("Tracker is not initialized")
@@ -631,6 +663,7 @@ class Search(BaseModel):
                 assert isinstance(scores_response.evaluated_params, list)
                 num_objectives = self._search_config.num_objectives
                 for score in scores:
+                    self._attach_opaque_recipe_audit(score)
                     self._result.add_result(
                         score, parameter_sets.generation_num, self._search_config.normalize
                     )
@@ -723,13 +756,69 @@ class Search(BaseModel):
                 ]
             else:
                 assert isinstance(self._using_file_backed_search_space, bool)
-                single_pset = parse_param_payload(
-                    param.knobs, self._using_file_backed_search_space
+                single_pset = parse_param_payload(param.knobs, self._using_file_backed_search_space)
+
+            if self._opaque_recipe_domain is not None:
+                single_pset, audit = self._opaque_recipe_domain.decode_candidate_with_audit(
+                    single_pset
                 )
+                self._opaque_recipe_audit_by_param_id[param.id] = audit
 
             params_from_generation.append(cast(ParamArg, single_pset))
 
         return params_from_generation
+
+    @property
+    def opaque_recipe_audit_records(self) -> tuple[dict[str, str | int], ...]:
+        """Return detached raw-token audit records observed in this search."""
+
+        return tuple(
+            {"param_id": param_id, **record}
+            for param_id, record in sorted(self._opaque_recipe_audit_by_param_id.items())
+        )
+
+    @property
+    def opaque_recipe_capability(self) -> dict[str, object] | None:
+        """Return the exact modified-CompileIQ capability bound to this search."""
+
+        if self._opaque_recipe_capability is None:
+            return None
+        return dict(self._opaque_recipe_capability)
+
+    @property
+    def opaque_recipe_core_provenance(self) -> dict[str, object] | None:
+        """Return the bundled core provenance verified at subprocess launch."""
+
+        provenance = self._core_ipc.resolved_core_provenance
+        if provenance is None:
+            return None
+        return dict(provenance)
+
+    def _attach_opaque_recipe_audit(self, score: Score) -> None:
+        if self._opaque_recipe_domain is None or score.is_baseline:
+            return
+        if not isinstance(score.param_id, int):
+            raise RuntimeError("Opaque recipe scores require an integer core parameter ID")
+        try:
+            audit = self._opaque_recipe_audit_by_param_id[score.param_id]
+        except KeyError as error:
+            raise RuntimeError(
+                "Opaque recipe score has no validated raw-token audit record"
+            ) from error
+
+        try:
+            metadata = json.loads(score.metadata) if score.metadata else {}
+        except (TypeError, ValueError, json.JSONDecodeError):
+            metadata = {"worker_metadata": score.metadata}
+        if not isinstance(metadata, dict):
+            metadata = {"worker_metadata": metadata}
+        metadata["compileiq_opaque_recipe"] = dict(audit)
+        score.metadata = json.dumps(
+            metadata,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
 
     def _clean_files(self):
         """Deletes cache files from this run"""

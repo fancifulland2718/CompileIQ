@@ -68,6 +68,14 @@ Set `CIQ_SEARCH_SPACES_DIR` to use a local mirror containing `manifest.json` plu
 
 Browse the published [Search Space Catalog Releases](https://github.com/NVIDIA/CompileIQ/releases?q=Search+Space+Catalog+Release&expanded=true) to inspect available catalog assets and release notes.
 
+## Taichi Forge fork extension
+
+The `forge/opaque-recipes-v1` branch adds a provider-neutral opaque recipe
+domain for Taichi Forge high-level optimization plans. It is deliberately
+separate from CompileIQ's ordinary PTXAS/NVCC search-space support. See
+[Taichi Forge opaque recipes](docs/taichi_forge_opaque_recipes.md) for the
+capability lock, worker contracts, build procedure, and integration boundary.
+
 ## Environment Configuration Options
 
 | Environment Variable | Default Value | Type | Description

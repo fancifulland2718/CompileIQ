@@ -24,10 +24,7 @@ def _write_platform_manifest(root, files):
     manifest_data = {
         "schema_version": 2,
         "core_commit": "test",
-        "files": {
-            rel_path: f"sha256:{sha256_file(path)}"
-            for rel_path, path in files.items()
-        },
+        "files": {rel_path: f"sha256:{sha256_file(path)}" for rel_path, path in files.items()},
     }
     manifest.write_text(json.dumps(with_core_lock(manifest_data)), encoding="utf-8")
     return manifest
@@ -70,6 +67,64 @@ def test_core_ipc_verifies_bundled_binary(monkeypatch, tmp_path):
     monkeypatch.setattr(core_comms.platform, "machine", lambda: "x86_64")
 
     assert CoreIPC()._resolve_core_binary() == binary
+
+
+def test_core_ipc_locks_opaque_search_to_exact_bundled_manifest(monkeypatch, tmp_path):
+    root = tmp_path / "executable"
+    rel_path = "linux/x86_64/bin/core"
+    binary = root / rel_path
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"core")
+    manifest_path = _write_manifest(root, rel_path, binary)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    monkeypatch.setattr(core_comms, "EXECUTABLE_DIR", root)
+    monkeypatch.setattr(core_comms, "MANIFEST_PATH", manifest_path)
+    monkeypatch.setattr(core_comms.sys, "platform", "linux")
+    monkeypatch.setattr(core_comms.platform, "machine", lambda: "x86_64")
+
+    ipc = CoreIPC(
+        required_core_commit=manifest["core_commit"],
+        required_core_lock=manifest["core_lock"],
+    )
+    assert ipc._resolve_core_binary() == binary
+    assert ipc.resolved_core_provenance["core_commit"] == manifest["core_commit"]
+    assert ipc.resolved_core_provenance["core_lock"] == manifest["core_lock"]
+
+
+@pytest.mark.parametrize("override_name", ("CIQ_CORE_BINARY", "CIQ_CORE_MANIFEST"))
+def test_core_ipc_rejects_overrides_for_opaque_search(monkeypatch, tmp_path, override_name):
+    override = tmp_path / "override"
+    override.write_bytes(b"override")
+    monkeypatch.setenv(override_name, str(override))
+
+    ipc = CoreIPC(
+        required_core_commit="exact-core",
+        required_core_lock="sha256:" + "1" * 64,
+    )
+    with pytest.raises(RuntimeError, match="overrides are disabled"):
+        ipc._resolve_core_binary()
+
+
+def test_core_ipc_rejects_bundled_manifest_different_from_opaque_domain(monkeypatch, tmp_path):
+    root = tmp_path / "executable"
+    rel_path = "linux/x86_64/bin/core"
+    binary = root / rel_path
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"core")
+    manifest_path = _write_manifest(root, rel_path, binary)
+
+    monkeypatch.setattr(core_comms, "EXECUTABLE_DIR", root)
+    monkeypatch.setattr(core_comms, "MANIFEST_PATH", manifest_path)
+    monkeypatch.setattr(core_comms.sys, "platform", "linux")
+    monkeypatch.setattr(core_comms.platform, "machine", lambda: "x86_64")
+
+    ipc = CoreIPC(
+        required_core_commit="different-core",
+        required_core_lock="sha256:" + "1" * 64,
+    )
+    with pytest.raises(RuntimeError, match="core commit does not match"):
+        ipc._resolve_core_binary()
 
 
 def test_core_ipc_verifies_bundled_platform_dependencies(monkeypatch, tmp_path):

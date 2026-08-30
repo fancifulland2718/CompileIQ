@@ -10,6 +10,7 @@ REQUIREMENTS:
       or: pytest -m requires_core
 """
 
+import json
 import sys
 import platform
 from pathlib import Path
@@ -17,6 +18,8 @@ from pathlib import Path
 import pytest
 import compileiq.search_spaces.base as ss
 from compileiq.ciq import Search
+from compileiq.forge_support import forge_recipe_search_capability
+from compileiq.recipes import OpaqueRecipeDomainV1
 from compileiq.types import SearchConfiguration, INVALID_SCORE
 
 
@@ -388,6 +391,68 @@ def test_string_choices_with_real_core(cache_dir):
             assert (
                 params["opt_level"] in valid_flags
             ), f"Unexpected opt_level: {params['opt_level']}"
+
+
+OPAQUE_RECIPE_CAPABILITY = forge_recipe_search_capability().as_dict()
+OPAQUE_RECIPE_DOMAIN = OpaqueRecipeDomainV1(
+    provider_namespace="integration.provider",
+    domain_version="1.0",
+    provider_semantic_fingerprint="semantic-fixture-v1",
+    compileiq_capability_id=OPAQUE_RECIPE_CAPABILITY["capability_id"],
+    compileiq_core_commit=OPAQUE_RECIPE_CAPABILITY["core_commit"],
+    compileiq_core_lock=OPAQUE_RECIPE_CAPABILITY["core_lock"],
+    recipe_ids=(
+        'provider://recipe/"quoted"?tile=16',
+        "opaque/火山\\recipe\x00\n\tboundary",
+    ),
+)
+
+
+def objective_opaque_recipe(config):
+    assert config["domain_fingerprint"] == OPAQUE_RECIPE_DOMAIN.domain_fingerprint
+    return float(OPAQUE_RECIPE_DOMAIN.recipe_ids.index(config["recipe_id"]))
+
+
+def test_opaque_recipe_domain_with_real_core(cache_dir):
+    """Unsafe opaque IDs stay outside core but reach the objective unchanged."""
+
+    search = Search(
+        objective_function=objective_opaque_recipe,
+        search_space=OPAQUE_RECIPE_DOMAIN,
+        search_config=SearchConfiguration(
+            **SMALL_CONFIG,
+            problem_type="min",
+            num_objectives=1,
+        ),
+        cache_folder=cache_dir,
+        disable_progress_bar=True,
+    )
+    result = search.start()
+
+    params = [candidate for candidate in result.get_results()["params"] if candidate]
+    assert params
+    assert all(
+        candidate["domain_fingerprint"] == OPAQUE_RECIPE_DOMAIN.domain_fingerprint
+        and candidate["recipe_id"] in OPAQUE_RECIPE_DOMAIN.recipe_ids
+        for candidate in params
+    )
+    audit_records = search.opaque_recipe_audit_records
+    assert audit_records
+    assert all(
+        record["core_recipe_token"].startswith("ciq-recipe-v1-")
+        and record["recipe_id"] in OPAQUE_RECIPE_DOMAIN.recipe_ids
+        for record in audit_records
+    )
+    result_audits = [
+        json.loads(metadata)["compileiq_opaque_recipe"]
+        for metadata in result.get_results()["metadata"]
+    ]
+    assert result_audits
+    assert all(
+        audit["core_recipe_token"].startswith("ciq-recipe-v1-")
+        and audit["recipe_id"] in OPAQUE_RECIPE_DOMAIN.recipe_ids
+        for audit in result_audits
+    )
 
 
 # ---------------------------------------------------------------------------

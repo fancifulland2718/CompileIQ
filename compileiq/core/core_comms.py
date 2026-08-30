@@ -20,7 +20,12 @@ from compileiq.core.core_types import (
     SingleCandidate,
     CompletionMessage,
 )
-from compileiq.core.verify_core import MANIFEST_PATH, verify_binary_platform
+from compileiq.core.verify_core import (
+    MANIFEST_PATH,
+    load_manifest,
+    validate_core_lock,
+    verify_binary_platform,
+)
 
 
 """
@@ -34,8 +39,22 @@ EXECUTABLE_DIR = Path(__file__).resolve().parent / "executable"
 
 
 class CoreIPC:
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        required_core_commit: str | None = None,
+        required_core_lock: str | None = None,
+    ):
+        if (required_core_commit is None) != (required_core_lock is None):
+            raise ValueError("required_core_commit and required_core_lock must be set together")
+        if required_core_commit is not None and not required_core_commit:
+            raise ValueError("required_core_commit must not be empty")
+        if required_core_lock is not None and not required_core_lock.startswith("sha256:"):
+            raise ValueError("required_core_lock must be a sha256 identity")
         self.core_process = None
+        self.required_core_commit = required_core_commit
+        self.required_core_lock = required_core_lock
+        self.resolved_core_provenance = None
 
     def __del__(self):
         if hasattr(self, "core_process"):
@@ -80,12 +99,18 @@ class CoreIPC:
 
     def _resolve_core_binary(self) -> Path:
         override = os.environ.get(CORE_BINARY_ENV_VAR)
+        manifest_override = os.environ.get(CORE_MANIFEST_ENV_VAR)
+        if self.required_core_lock is not None and (override or manifest_override):
+            raise RuntimeError(
+                "Opaque recipe searches require the bundled manifest-locked CompileIQ "
+                f"core; {CORE_BINARY_ENV_VAR} and {CORE_MANIFEST_ENV_VAR} overrides "
+                "are disabled"
+            )
         if override:
             core_binary = Path(override).expanduser()
             if not core_binary.is_file():
                 raise RuntimeError(f"{CORE_BINARY_ENV_VAR} points to a missing file: {core_binary}")
 
-            manifest_override = os.environ.get(CORE_MANIFEST_ENV_VAR)
             if manifest_override:
                 manifest_path = Path(manifest_override).expanduser()
                 verify_binary_platform(
@@ -103,12 +128,33 @@ class CoreIPC:
 
             return core_binary
 
+        manifest = load_manifest(MANIFEST_PATH)
+        manifest_errors = validate_core_lock(manifest)
+        if manifest_errors:
+            raise RuntimeError("; ".join(manifest_errors))
+        if self.required_core_lock is not None:
+            if manifest.get("core_commit") != self.required_core_commit:
+                raise RuntimeError(
+                    "Bundled CompileIQ core commit does not match the opaque recipe domain"
+                )
+            if manifest.get("core_lock") != self.required_core_lock:
+                raise RuntimeError(
+                    "Bundled CompileIQ core lock does not match the opaque recipe domain"
+                )
+
         core_binary = self._bundled_core_binary()
-        verify_binary_platform(
+        verified_files = verify_binary_platform(
             core_binary,
             executable_root=EXECUTABLE_DIR,
             manifest_path=MANIFEST_PATH,
         )
+        self.resolved_core_provenance = {
+            "core_binary": str(core_binary.resolve()),
+            "manifest_path": str(Path(MANIFEST_PATH).resolve()),
+            "core_commit": manifest.get("core_commit"),
+            "core_lock": manifest.get("core_lock"),
+            "verified_platform_files": tuple(verified_files),
+        }
         return core_binary
 
     def stop(self):
