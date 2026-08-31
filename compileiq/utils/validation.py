@@ -102,8 +102,11 @@ def validate_scores(func_return: Any, num_objectives: int) -> SingleScore | tupl
             # Adjusting for the case where the function returns a single invalid score
             func_return = [INVALID_SCORE for _ in range(num_objectives)]
 
-        multi_score = [SingleScore] * num_objectives
-        score_typer = TypeAdapter(Tuple[*multi_score])
+        multi_score = tuple([SingleScore] * num_objectives)
+        # ``Tuple[*multi_score]`` requires Python 3.11 grammar. Passing the
+        # dynamically assembled parameter tuple is equivalent and keeps the
+        # Forge main-thread worker importable on Taichi's Python 3.10 wheels.
+        score_typer = TypeAdapter(Tuple[multi_score])
     else:
         score_typer = TypeAdapter(SingleScore)
 

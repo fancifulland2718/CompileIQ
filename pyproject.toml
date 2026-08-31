@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "compileiq"
-version = "1.0.0dev1+taichiforge.opaque1"
+version = "1.0.0dev2+taichiforge.opaque1"
 description = "NVIDIA compiler control optimization engine."
 authors = ["NVIDIA Corporation"]
 maintainers = ["CompileIQ Team <compileiq@nvidia.com>"]
@@ -13,7 +13,7 @@ include = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.11,<3.14"
+python = ">=3.10,<3.14"
 pandas = "^2.2.3"
 pydantic = "^2.9.2"
 tqdm = "^4.67.0"

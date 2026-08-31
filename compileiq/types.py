@@ -4,7 +4,16 @@ import pathlib
 import ast
 import warnings
 from math import comb, ceil
-from enum import StrEnum
+try:
+    from enum import StrEnum
+except ImportError:  # Python 3.10
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        """Minimal stdlib-compatible fallback for explicit string members."""
+
+        def __str__(self):
+            return str(self.value)
 from abc import ABC, abstractmethod
 from importlib.metadata import version
 from pydantic import BaseModel, Field, model_validator, field_validator, SkipValidation

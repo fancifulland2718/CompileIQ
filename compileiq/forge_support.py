@@ -21,8 +21,8 @@ from compileiq.utils.validation import Score
 
 
 FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA = "compileiq.taichi-forge-recipe-search-capability.v1"
-FORGE_RECIPE_SEARCH_FORK_BUILD_ID = "compileiq-taichi-forge-opaque-recipes.v1"
-FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev1+taichiforge.opaque1"
+FORGE_RECIPE_SEARCH_FORK_BUILD_ID = "compileiq-taichi-forge-opaque-recipes.v1.1"
+FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev2+taichiforge.opaque1"
 FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 1
 FORGE_RECIPE_SEARCH_CAPABILITY_ID_PREFIX = "ciq-forge-cap-v1:"
 
@@ -47,10 +47,10 @@ class ForgeRecipeSearchCapabilityV1(BaseModel):
         default=SCHEMA, alias="schema"
     )
     protocol_revision: Literal[1] = FORGE_RECIPE_SEARCH_PROTOCOL_REVISION
-    fork_build_id: Literal["compileiq-taichi-forge-opaque-recipes.v1"] = (
+    fork_build_id: Literal["compileiq-taichi-forge-opaque-recipes.v1.1"] = (
         FORGE_RECIPE_SEARCH_FORK_BUILD_ID
     )
-    package_version: Literal["1.0.0dev1+taichiforge.opaque1"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
+    package_version: Literal["1.0.0dev2+taichiforge.opaque1"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
     opaque_recipe_domain_schema: Literal["compileiq.opaque-recipe-domain.v1"] = (
         OpaqueRecipeDomainV1.SCHEMA
     )

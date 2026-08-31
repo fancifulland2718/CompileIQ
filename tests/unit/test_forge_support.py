@@ -33,6 +33,12 @@ def test_forge_recipe_capability_is_versioned_and_core_locked():
         "bundled_manifest_lock_and_platform_hashes_at_search_start_no_override"
     )
     assert payload["objective_worker"] == "forge_main_thread_serial_v1"
+    assert payload["fork_build_id"] == (
+        "compileiq-taichi-forge-opaque-recipes.v1.1"
+    )
+    assert payload["package_version"] == (
+        "1.0.0dev2+taichiforge.opaque1"
+    )
     assert payload["core_lock"].startswith("sha256:")
     assert payload["capability_id"].startswith("ciq-forge-cap-v1:")
     assert ForgeRecipeSearchCapabilityV1(**payload) == capability
