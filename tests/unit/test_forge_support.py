@@ -1,7 +1,10 @@
 import json
 from pathlib import Path
 import threading
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 import pytest
 from pydantic import ValidationError
@@ -11,9 +14,11 @@ from compileiq.forge_support import (
     FORGE_RECIPE_SEARCH_FORK_BUILD_ID,
     FORGE_RECIPE_SEARCH_PACKAGE_VERSION,
     ForgeMainThreadWorker,
+    ForgeOpaqueRecipeExhaustiveSearchV1,
     ForgeRecipeSearchCapabilityV1,
     forge_recipe_search_capability,
 )
+from compileiq.recipes import OpaqueRecipeDomainV1
 
 
 def test_forge_recipe_capability_is_versioned_and_core_locked():
@@ -21,7 +26,7 @@ def test_forge_recipe_capability_is_versioned_and_core_locked():
     payload = capability.as_dict()
 
     assert payload["schema"] == "compileiq.taichi-forge-recipe-search-capability.v1"
-    assert payload["protocol_revision"] == 1
+    assert payload["protocol_revision"] == 2
     assert payload["fork_build_id"] == FORGE_RECIPE_SEARCH_FORK_BUILD_ID
     assert payload["package_version"] == FORGE_RECIPE_SEARCH_PACKAGE_VERSION
     assert payload["opaque_recipe_domain_schema"] == ("compileiq.opaque-recipe-domain.v1")
@@ -33,11 +38,14 @@ def test_forge_recipe_capability_is_versioned_and_core_locked():
         "bundled_manifest_lock_and_platform_hashes_at_search_start_no_override"
     )
     assert payload["objective_worker"] == "forge_main_thread_serial_v1"
+    assert payload["opaque_recipe_search"] == (
+        "bounded_exhaustive_main_thread_v1"
+    )
     assert payload["fork_build_id"] == (
-        "compileiq-taichi-forge-opaque-recipes.v1.1"
+        "compileiq-taichi-forge-opaque-recipes.v1.2"
     )
     assert payload["package_version"] == (
-        "1.0.0dev2+taichiforge.opaque1"
+        "1.0.0dev3+taichiforge.opaque1"
     )
     assert payload["core_lock"].startswith("sha256:")
     assert payload["capability_id"].startswith("ciq-forge-cap-v1:")
@@ -90,3 +98,32 @@ def test_forge_worker_executes_serially_on_calling_thread(tmp_path):
 def test_forge_worker_rejects_generic_baseline_normalization(tmp_path):
     with pytest.raises(ValueError, match="generic baseline normalization"):
         ForgeMainThreadWorker.create(tmp_path, normalize=True, tracker=None)
+
+
+def test_forge_exhaustive_search_observes_every_safe_token_once():
+    capability = forge_recipe_search_capability().as_dict()
+    domain = OpaqueRecipeDomainV1(
+        provider_namespace="forge.test",
+        domain_version="complete-plan.v1",
+        provider_semantic_fingerprint="semantic:test",
+        compileiq_capability_id=capability["capability_id"],
+        compileiq_core_commit=capability["core_commit"],
+        compileiq_core_lock=capability["core_lock"],
+        recipe_ids=("plan:candidate", "plan:baseline", "plan:other"),
+    )
+    observed = []
+    search = ForgeOpaqueRecipeExhaustiveSearchV1(
+        objective_function=lambda params: observed.append(params["recipe_id"])
+        or float(domain.recipe_ids.index(params["recipe_id"])),
+        search_space=domain,
+        baseline_recipe_id="plan:baseline",
+    )
+    result = search.start()
+
+    assert observed == list(domain.recipe_ids)
+    assert len(search.opaque_recipe_audit_records) == len(domain.recipe_ids)
+    assert {item["recipe_id"] for item in search.opaque_recipe_audit_records} == set(
+        domain.recipe_ids
+    )
+    assert result.get_best_result()["params"]["recipe_id"] == domain.recipe_ids[0]
+    assert sum(item["is_baseline"] for item in result.get_results()) == 1

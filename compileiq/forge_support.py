@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
+import threading
 from typing import ClassVar, Literal
 from uuid import uuid4
 
@@ -21,9 +24,9 @@ from compileiq.utils.validation import Score
 
 
 FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA = "compileiq.taichi-forge-recipe-search-capability.v1"
-FORGE_RECIPE_SEARCH_FORK_BUILD_ID = "compileiq-taichi-forge-opaque-recipes.v1.1"
-FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev2+taichiforge.opaque1"
-FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 1
+FORGE_RECIPE_SEARCH_FORK_BUILD_ID = "compileiq-taichi-forge-opaque-recipes.v1.2"
+FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev3+taichiforge.opaque1"
+FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 2
 FORGE_RECIPE_SEARCH_CAPABILITY_ID_PREFIX = "ciq-forge-cap-v1:"
 
 
@@ -46,11 +49,11 @@ class ForgeRecipeSearchCapabilityV1(BaseModel):
     schema_id: Literal["compileiq.taichi-forge-recipe-search-capability.v1"] = Field(
         default=SCHEMA, alias="schema"
     )
-    protocol_revision: Literal[1] = FORGE_RECIPE_SEARCH_PROTOCOL_REVISION
-    fork_build_id: Literal["compileiq-taichi-forge-opaque-recipes.v1.1"] = (
+    protocol_revision: Literal[2] = FORGE_RECIPE_SEARCH_PROTOCOL_REVISION
+    fork_build_id: Literal["compileiq-taichi-forge-opaque-recipes.v1.2"] = (
         FORGE_RECIPE_SEARCH_FORK_BUILD_ID
     )
-    package_version: Literal["1.0.0dev2+taichiforge.opaque1"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
+    package_version: Literal["1.0.0dev3+taichiforge.opaque1"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
     opaque_recipe_domain_schema: Literal["compileiq.opaque-recipe-domain.v1"] = (
         OpaqueRecipeDomainV1.SCHEMA
     )
@@ -68,6 +71,9 @@ class ForgeRecipeSearchCapabilityV1(BaseModel):
         "capability_id_core_commit_core_lock"
     )
     objective_worker: Literal["forge_main_thread_serial_v1"] = "forge_main_thread_serial_v1"
+    opaque_recipe_search: Literal["bounded_exhaustive_main_thread_v1"] = (
+        "bounded_exhaustive_main_thread_v1"
+    )
     core_manifest_schema_version: int
     core_commit: str
     core_lock: str
@@ -145,6 +151,7 @@ def forge_recipe_search_capability(
         ),
         "opaque_domain_binding": "capability_id_core_commit_core_lock",
         "objective_worker": "forge_main_thread_serial_v1",
+        "opaque_recipe_search": "bounded_exhaustive_main_thread_v1",
         "core_manifest_schema_version": schema_version,
         "core_commit": core_commit,
         "core_lock": core_lock,
@@ -222,12 +229,146 @@ class ForgeMainThreadWorker(Worker):
         return scores
 
 
+class ForgeOpaqueRecipeExhaustiveResultV1:
+    """Immutable detached observations from one complete opaque domain."""
+
+    def __init__(self, observations, *, problem_type):
+        self._observations = tuple(copy.deepcopy(item) for item in observations)
+        self._problem_type = problem_type
+
+    def get_results(self):
+        return tuple(copy.deepcopy(item) for item in self._observations)
+
+    def get_best_result(self):
+        selector = min if self._problem_type == "min" else max
+        selected = selector(
+            self._observations,
+            key=lambda item: (item["score"], item["params"]["recipe_id"]),
+        )
+        return copy.deepcopy(selected)
+
+
+class ForgeOpaqueRecipeExhaustiveSearchV1:
+    """Evaluate every safe token in one bounded opaque domain exactly once.
+
+    This is the deterministic search route for finite Forge plan domains. The
+    provider IDs are restored only after the same safe ordinal-token decoder
+    used by the binary core validates domain identity and membership.
+    """
+
+    PROTOCOL = "bounded_exhaustive_main_thread_v1"
+
+    def __init__(
+        self,
+        *,
+        objective_function,
+        search_space,
+        baseline_recipe_id,
+        problem_type="min",
+    ):
+        if not callable(objective_function):
+            raise TypeError("objective_function must be callable")
+        if not isinstance(search_space, OpaqueRecipeDomainV1):
+            raise TypeError("search_space must be an OpaqueRecipeDomainV1")
+        if baseline_recipe_id not in search_space.recipe_ids:
+            raise ValueError("opaque exhaustive search must retain its baseline")
+        if problem_type not in ("min", "max"):
+            raise ValueError("problem_type must be 'min' or 'max'")
+        self._capability = forge_recipe_search_capability().as_dict()
+        required = {
+            "compileiq_capability_id": self._capability["capability_id"],
+            "compileiq_core_commit": self._capability["core_commit"],
+            "compileiq_core_lock": self._capability["core_lock"],
+        }
+        if any(
+            getattr(search_space, name) != value
+            for name, value in required.items()
+        ):
+            raise RuntimeError(
+                "opaque domain is not bound to this exact modified CompileIQ"
+            )
+        self._objective_function = objective_function
+        self._search_space = search_space
+        self._baseline_recipe_id = baseline_recipe_id
+        self._problem_type = problem_type
+        self._audit_records = ()
+        self._observations = ()
+
+    @property
+    def opaque_recipe_capability(self):
+        return dict(self._capability)
+
+    @property
+    def opaque_recipe_core_provenance(self):
+        return {
+            "core_commit": self._capability["core_commit"],
+            "core_lock": self._capability["core_lock"],
+            "verification": "bundled_manifest_lock_at_search_start",
+        }
+
+    @property
+    def opaque_recipe_audit_records(self):
+        return tuple(copy.deepcopy(item) for item in self._audit_records)
+
+    @property
+    def observations(self):
+        return tuple(copy.deepcopy(item) for item in self._observations)
+
+    def start(self):
+        if threading.current_thread() is not threading.main_thread():
+            raise RuntimeError(
+                "opaque exhaustive search must run on the Python main thread"
+            )
+        observations = []
+        audits = []
+        for ordinal, token in enumerate(self._search_space._core_recipe_tokens):
+            decoded, audit = self._search_space.decode_candidate_with_audit(
+                {
+                    "domain_fingerprint": self._search_space.domain_fingerprint,
+                    "recipe_id": token,
+                }
+            )
+            score = self._objective_function(decoded)
+            if (
+                isinstance(score, bool)
+                or not isinstance(score, (int, float))
+                or not math.isfinite(float(score))
+            ):
+                raise ValueError(
+                    "opaque exhaustive objective must return one finite numeric score"
+                )
+            param_id = ordinal + 1
+            audits.append({"param_id": param_id, **audit})
+            observations.append(
+                {
+                    "param_id": param_id,
+                    "score": float(score),
+                    "params": dict(decoded),
+                    "is_baseline": (
+                        decoded["recipe_id"] == self._baseline_recipe_id
+                    ),
+                    "metadata": {
+                        "worker": ForgeMainThreadWorker.PROTOCOL,
+                        "search": self.PROTOCOL,
+                        "compileiq_opaque_recipe": dict(audit),
+                    },
+                }
+            )
+        self._audit_records = tuple(audits)
+        self._observations = tuple(observations)
+        return ForgeOpaqueRecipeExhaustiveResultV1(
+            observations, problem_type=self._problem_type
+        )
+
+
 __all__ = [
     "FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA",
     "FORGE_RECIPE_SEARCH_FORK_BUILD_ID",
     "FORGE_RECIPE_SEARCH_PACKAGE_VERSION",
     "FORGE_RECIPE_SEARCH_PROTOCOL_REVISION",
     "ForgeMainThreadWorker",
+    "ForgeOpaqueRecipeExhaustiveResultV1",
+    "ForgeOpaqueRecipeExhaustiveSearchV1",
     "ForgeRecipeSearchCapabilityV1",
     "forge_recipe_search_capability",
 ]
