@@ -70,9 +70,10 @@ Browse the published [Search Space Catalog Releases](https://github.com/NVIDIA/C
 
 ## Taichi Forge fork extension
 
-The `forge/opaque-recipes-v1` branch adds a provider-neutral opaque recipe
-domain for Taichi Forge high-level optimization plans. It is deliberately
-separate from CompileIQ's ordinary PTXAS/NVCC search-space support. See
+The maintained Taichi Forge fork adds a provider-neutral opaque recipe domain
+for complete high-level optimization plans, plus explicit multi-objective and
+hard-constraint selection. It is deliberately separate from CompileIQ's
+ordinary PTXAS/NVCC search-space support. See
 [Taichi Forge opaque recipes](docs/taichi_forge_opaque_recipes.md) for the
 capability lock, worker contracts, build procedure, and integration boundary.
 

@@ -9,10 +9,10 @@ import math
 import os
 from pathlib import Path
 import threading
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, Mapping
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from compileiq.core.verify_core import MANIFEST_PATH, load_manifest, validate_core_lock
 from compileiq.recipes import (
@@ -24,10 +24,113 @@ from compileiq.utils.validation import Score
 
 
 FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA = "compileiq.taichi-forge-recipe-search-capability.v1"
-FORGE_RECIPE_SEARCH_FORK_BUILD_ID = "compileiq-taichi-forge-opaque-recipes.v1.2"
-FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev3+taichiforge.opaque1"
-FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 2
+FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA = "compileiq.taichi-forge-opaque-target-contract.v1"
+FORGE_RECIPE_SEARCH_FORK_BUILD_ID = "compileiq-taichi-forge-opaque-recipes.v1.3"
+FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev3+taichiforge.opaque2"
+FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 3
 FORGE_RECIPE_SEARCH_CAPABILITY_ID_PREFIX = "ciq-forge-cap-v1:"
+
+
+def _finite_number(value, *, field_name):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+    ):
+        raise ValueError(f"{field_name} must be one finite numeric value")
+    return float(value)
+
+
+def _metric_name(value):
+    if not isinstance(value, str) or not value:
+        raise ValueError("metric name must be nonempty text")
+    if len(value.encode("utf-8")) > 128:
+        raise ValueError("metric name must be at most 128 UTF-8 bytes")
+    return value
+
+
+class ForgeOpaqueObjectiveV1(BaseModel):
+    """One named target whose direction is explicit and never scalarized."""
+
+    name: str
+    direction: Literal["min", "max"] = "min"
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value):
+        return _metric_name(value)
+
+
+class ForgeOpaqueConstraintV1(BaseModel):
+    """One inclusive feasibility bound over a named observed metric."""
+
+    metric: str
+    relation: Literal["<=", ">="]
+    bound: float
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @field_validator("metric")
+    @classmethod
+    def _validate_metric(cls, value):
+        return _metric_name(value)
+
+    @field_validator("bound", mode="before")
+    @classmethod
+    def _validate_bound(cls, value):
+        return _finite_number(value, field_name="constraint bound")
+
+
+class ForgeOpaqueTargetContractV1(BaseModel):
+    """Explicit objectives and hard constraints for complete Forge recipes."""
+
+    SCHEMA: ClassVar[str] = FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA
+    MAX_OBJECTIVES: ClassVar[int] = 16
+    MAX_CONSTRAINTS: ClassVar[int] = 32
+
+    schema_id: Literal["compileiq.taichi-forge-opaque-target-contract.v1"] = Field(
+        default=SCHEMA, alias="schema"
+    )
+    objectives: tuple[ForgeOpaqueObjectiveV1, ...]
+    constraints: tuple[ForgeOpaqueConstraintV1, ...] = ()
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        populate_by_name=True,
+        strict=True,
+    )
+
+    @model_validator(mode="after")
+    def _validate_contract(self):
+        if not self.objectives:
+            raise ValueError("opaque target contract requires at least one objective")
+        if len(self.objectives) > self.MAX_OBJECTIVES:
+            raise ValueError(
+                f"opaque target contract supports at most {self.MAX_OBJECTIVES} objectives"
+            )
+        if len(self.constraints) > self.MAX_CONSTRAINTS:
+            raise ValueError(
+                f"opaque target contract supports at most {self.MAX_CONSTRAINTS} constraints"
+            )
+        objective_names = tuple(item.name for item in self.objectives)
+        if len(set(objective_names)) != len(objective_names):
+            raise ValueError("opaque target objective names must be unique")
+        return self
+
+    @property
+    def metric_names(self):
+        return tuple(
+            dict.fromkeys(
+                [item.name for item in self.objectives]
+                + [item.metric for item in self.constraints]
+            )
+        )
+
+    def as_dict(self):
+        return self.model_dump(by_alias=True)
 
 
 def _capability_identity(payload: dict[str, object]) -> str:
@@ -49,17 +152,23 @@ class ForgeRecipeSearchCapabilityV1(BaseModel):
     schema_id: Literal["compileiq.taichi-forge-recipe-search-capability.v1"] = Field(
         default=SCHEMA, alias="schema"
     )
-    protocol_revision: Literal[2] = FORGE_RECIPE_SEARCH_PROTOCOL_REVISION
-    fork_build_id: Literal["compileiq-taichi-forge-opaque-recipes.v1.2"] = (
+    protocol_revision: Literal[3] = FORGE_RECIPE_SEARCH_PROTOCOL_REVISION
+    fork_build_id: Literal["compileiq-taichi-forge-opaque-recipes.v1.3"] = (
         FORGE_RECIPE_SEARCH_FORK_BUILD_ID
     )
-    package_version: Literal["1.0.0dev3+taichiforge.opaque1"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
+    package_version: Literal["1.0.0dev3+taichiforge.opaque2"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
     opaque_recipe_domain_schema: Literal["compileiq.opaque-recipe-domain.v1"] = (
         OpaqueRecipeDomainV1.SCHEMA
     )
     selection_audit_schema: Literal["compileiq.opaque-recipe-selection.v1"] = (
         OPAQUE_RECIPE_SELECTION_AUDIT_SCHEMA
     )
+    opaque_target_contract_schema: Literal[
+        "compileiq.taichi-forge-opaque-target-contract.v1"
+    ] = FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA
+    opaque_target_selection: Literal[
+        "explicit_objectives_constraints_pareto_no_scalarization_v1"
+    ] = "explicit_objectives_constraints_pareto_no_scalarization_v1"
     max_recipe_ids: int = OpaqueRecipeDomainV1.MAX_RECIPE_IDS
     max_field_utf8_bytes: int = OpaqueRecipeDomainV1.MAX_FIELD_UTF8_BYTES
     max_canonical_bytes: int = OpaqueRecipeDomainV1.MAX_CANONICAL_BYTES
@@ -142,6 +251,10 @@ def forge_recipe_search_capability(
         "package_version": FORGE_RECIPE_SEARCH_PACKAGE_VERSION,
         "opaque_recipe_domain_schema": OpaqueRecipeDomainV1.SCHEMA,
         "selection_audit_schema": OPAQUE_RECIPE_SELECTION_AUDIT_SCHEMA,
+        "opaque_target_contract_schema": FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA,
+        "opaque_target_selection": (
+            "explicit_objectives_constraints_pareto_no_scalarization_v1"
+        ),
         "max_recipe_ids": OpaqueRecipeDomainV1.MAX_RECIPE_IDS,
         "max_field_utf8_bytes": OpaqueRecipeDomainV1.MAX_FIELD_UTF8_BYTES,
         "max_canonical_bytes": OpaqueRecipeDomainV1.MAX_CANONICAL_BYTES,
@@ -232,20 +345,89 @@ class ForgeMainThreadWorker(Worker):
 class ForgeOpaqueRecipeExhaustiveResultV1:
     """Immutable detached observations from one complete opaque domain."""
 
-    def __init__(self, observations, *, problem_type):
+    def __init__(self, observations, *, problem_type, target_contract=None):
         self._observations = tuple(copy.deepcopy(item) for item in observations)
         self._problem_type = problem_type
+        self._target_contract = target_contract
+
+    @property
+    def target_contract(self):
+        if self._target_contract is None:
+            return None
+        return self._target_contract.as_dict()
 
     def get_results(self):
         return tuple(copy.deepcopy(item) for item in self._observations)
 
+    def get_feasible_results(self):
+        if self._target_contract is None:
+            return self.get_results()
+        return tuple(
+            copy.deepcopy(item) for item in self._observations if item["feasible"]
+        )
+
     def get_best_result(self):
+        if self._target_contract is not None:
+            if len(self._target_contract.objectives) != 1:
+                raise ValueError(
+                    "multi-objective opaque results have no scalar winner; "
+                    "use pareto_front()"
+                )
+            feasible = self.get_feasible_results()
+            if not feasible:
+                raise ValueError("opaque target constraints rejected every recipe")
+            objective = self._target_contract.objectives[0]
+            selected = min(
+                feasible,
+                key=lambda item: (
+                    item["metrics"][objective.name]
+                    if objective.direction == "min"
+                    else -item["metrics"][objective.name],
+                    item["params"]["recipe_id"],
+                ),
+            )
+            return copy.deepcopy(selected)
         selector = min if self._problem_type == "min" else max
         selected = selector(
             self._observations,
             key=lambda item: (item["score"], item["params"]["recipe_id"]),
         )
         return copy.deepcopy(selected)
+
+    def pareto_front(self):
+        if self._target_contract is None:
+            raise ValueError("pareto_front requires an opaque target contract")
+        feasible = self.get_feasible_results()
+        frontier = []
+        for candidate in feasible:
+            if any(
+                self._dominates(other, candidate)
+                for other in feasible
+                if other["param_id"] != candidate["param_id"]
+            ):
+                continue
+            frontier.append(candidate)
+        return tuple(
+            copy.deepcopy(item)
+            for item in sorted(
+                frontier,
+                key=lambda item: item["params"]["recipe_id"],
+            )
+        )
+
+    def _dominates(self, left, right):
+        no_worse = True
+        strictly_better = False
+        for objective in self._target_contract.objectives:
+            left_value = left["metrics"][objective.name]
+            right_value = right["metrics"][objective.name]
+            if objective.direction == "min":
+                no_worse = no_worse and left_value <= right_value
+                strictly_better = strictly_better or left_value < right_value
+            else:
+                no_worse = no_worse and left_value >= right_value
+                strictly_better = strictly_better or left_value > right_value
+        return no_worse and strictly_better
 
 
 class ForgeOpaqueRecipeExhaustiveSearchV1:
@@ -265,6 +447,7 @@ class ForgeOpaqueRecipeExhaustiveSearchV1:
         search_space,
         baseline_recipe_id,
         problem_type="min",
+        target_contract=None,
     ):
         if not callable(objective_function):
             raise TypeError("objective_function must be callable")
@@ -274,6 +457,15 @@ class ForgeOpaqueRecipeExhaustiveSearchV1:
             raise ValueError("opaque exhaustive search must retain its baseline")
         if problem_type not in ("min", "max"):
             raise ValueError("problem_type must be 'min' or 'max'")
+        if target_contract is not None and not isinstance(
+            target_contract, ForgeOpaqueTargetContractV1
+        ):
+            raise TypeError("target_contract must be a ForgeOpaqueTargetContractV1")
+        if target_contract is not None and problem_type != "min":
+            raise ValueError(
+                "problem_type is unavailable with an opaque target contract; "
+                "declare each objective direction explicitly"
+            )
         self._capability = forge_recipe_search_capability().as_dict()
         required = {
             "compileiq_capability_id": self._capability["capability_id"],
@@ -291,6 +483,7 @@ class ForgeOpaqueRecipeExhaustiveSearchV1:
         self._search_space = search_space
         self._baseline_recipe_id = baseline_recipe_id
         self._problem_type = problem_type
+        self._target_contract = target_contract
         self._audit_records = ()
         self._observations = ()
 
@@ -314,6 +507,48 @@ class ForgeOpaqueRecipeExhaustiveSearchV1:
     def observations(self):
         return tuple(copy.deepcopy(item) for item in self._observations)
 
+    @property
+    def target_contract(self):
+        if self._target_contract is None:
+            return None
+        return self._target_contract.as_dict()
+
+    def _observe_target(self, value):
+        if not isinstance(value, Mapping):
+            raise ValueError(
+                "opaque target objective must return a mapping of named finite metrics"
+            )
+        expected = set(self._target_contract.metric_names)
+        observed = set(value)
+        if observed != expected:
+            raise ValueError(
+                "opaque target objective metrics mismatch: "
+                f"expected {sorted(expected)!r}, "
+                f"got {sorted(observed, key=lambda item: str(item))!r}"
+            )
+        metrics = {
+            name: _finite_number(value[name], field_name=f"metric {name!r}")
+            for name in self._target_contract.metric_names
+        }
+        violations = []
+        for constraint in self._target_contract.constraints:
+            actual = metrics[constraint.metric]
+            satisfied = (
+                actual <= constraint.bound
+                if constraint.relation == "<="
+                else actual >= constraint.bound
+            )
+            if not satisfied:
+                violations.append(
+                    {
+                        "metric": constraint.metric,
+                        "relation": constraint.relation,
+                        "bound": constraint.bound,
+                        "actual": actual,
+                    }
+                )
+        return metrics, tuple(violations)
+
     def start(self):
         if threading.current_thread() is not threading.main_thread():
             raise RuntimeError(
@@ -328,47 +563,59 @@ class ForgeOpaqueRecipeExhaustiveSearchV1:
                     "recipe_id": token,
                 }
             )
-            score = self._objective_function(decoded)
-            if (
-                isinstance(score, bool)
-                or not isinstance(score, (int, float))
-                or not math.isfinite(float(score))
-            ):
-                raise ValueError(
-                    "opaque exhaustive objective must return one finite numeric score"
-                )
+            objective_value = self._objective_function(decoded)
             param_id = ordinal + 1
             audits.append({"param_id": param_id, **audit})
-            observations.append(
-                {
-                    "param_id": param_id,
-                    "score": float(score),
-                    "params": dict(decoded),
-                    "is_baseline": (
-                        decoded["recipe_id"] == self._baseline_recipe_id
-                    ),
-                    "metadata": {
-                        "worker": ForgeMainThreadWorker.PROTOCOL,
-                        "search": self.PROTOCOL,
-                        "compileiq_opaque_recipe": dict(audit),
-                    },
-                }
-            )
+            observation = {
+                "param_id": param_id,
+                "params": dict(decoded),
+                "is_baseline": decoded["recipe_id"] == self._baseline_recipe_id,
+                "metadata": {
+                    "worker": ForgeMainThreadWorker.PROTOCOL,
+                    "search": self.PROTOCOL,
+                    "compileiq_opaque_recipe": dict(audit),
+                },
+            }
+            if self._target_contract is None:
+                observation["score"] = _finite_number(
+                    objective_value,
+                    field_name="opaque exhaustive objective score",
+                )
+            else:
+                metrics, violations = self._observe_target(objective_value)
+                observation.update(
+                    {
+                        "metrics": metrics,
+                        "objective_values": tuple(
+                            metrics[item.name]
+                            for item in self._target_contract.objectives
+                        ),
+                        "feasible": not violations,
+                        "constraint_violations": violations,
+                    }
+                )
+            observations.append(observation)
         self._audit_records = tuple(audits)
         self._observations = tuple(observations)
         return ForgeOpaqueRecipeExhaustiveResultV1(
-            observations, problem_type=self._problem_type
+            observations,
+            problem_type=self._problem_type,
+            target_contract=self._target_contract,
         )
 
 
 __all__ = [
     "FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA",
+    "FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA",
     "FORGE_RECIPE_SEARCH_FORK_BUILD_ID",
     "FORGE_RECIPE_SEARCH_PACKAGE_VERSION",
     "FORGE_RECIPE_SEARCH_PROTOCOL_REVISION",
     "ForgeMainThreadWorker",
+    "ForgeOpaqueConstraintV1",
+    "ForgeOpaqueObjectiveV1",
     "ForgeOpaqueRecipeExhaustiveResultV1",
     "ForgeOpaqueRecipeExhaustiveSearchV1",
+    "ForgeOpaqueTargetContractV1",
     "ForgeRecipeSearchCapabilityV1",
     "forge_recipe_search_capability",
 ]

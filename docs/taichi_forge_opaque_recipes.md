@@ -24,6 +24,9 @@ selects among the exact opaque recipes Forge supplies.
 - `PairedIsolatedWorker` is a separate diagnostic worker for fresh-process
   balanced AB/BA measurements. It does not turn compile time into an admission
   gate and it requires `normalize=False`.
+- `ForgeOpaqueTargetContractV1` declares named min/max objectives and inclusive
+  hard constraints. It never constructs a hidden weighted score. Infeasible
+  recipes remain in the audit result but cannot become a winner or Pareto point.
 
 The provider must include its baseline recipe in `recipe_ids`; this fork does
 not invent a baseline or decide whether a candidate is legal, correct, or safe
@@ -51,6 +54,51 @@ Pass the domain to `compileiq.ciq.Search` with
 `worker_type=ForgeMainThreadWorker` and a search configuration whose
 `normalize` field is false. The objective receives the exact
 `domain_fingerprint` and restored provider `recipe_id`.
+
+## Explicit objectives and constraints
+
+The deterministic exhaustive route can consume structured observations without
+exposing Forge recipe internals to CompileIQ. Every returned metric must be
+declared by an objective or constraint and must be finite.
+
+```python
+from compileiq.forge_support import (
+    ForgeOpaqueConstraintV1,
+    ForgeOpaqueObjectiveV1,
+    ForgeOpaqueRecipeExhaustiveSearchV1,
+    ForgeOpaqueTargetContractV1,
+)
+
+contract = ForgeOpaqueTargetContractV1(
+    objectives=(
+        ForgeOpaqueObjectiveV1(name="steady_ms", direction="min"),
+        ForgeOpaqueObjectiveV1(name="cold_ms", direction="min"),
+    ),
+    constraints=(
+        ForgeOpaqueConstraintV1(
+            metric="persistent_vram_mib",
+            relation="<=",
+            bound=512.0,
+        ),
+    ),
+)
+
+search = ForgeOpaqueRecipeExhaustiveSearchV1(
+    objective_function=lambda params: evaluate_complete_recipe(params["recipe_id"]),
+    search_space=domain,
+    baseline_recipe_id="baseline",
+    target_contract=contract,
+)
+result = search.start()
+frontier = result.pareto_front()
+```
+
+`evaluate_complete_recipe()` must return exactly `steady_ms`, `cold_ms`, and
+`persistent_vram_mib`. A single-objective contract supports
+`get_best_result()`. A multi-objective contract deliberately rejects that call;
+the caller must inspect `pareto_front()` and apply any product policy outside
+CompileIQ. This keeps steady latency, cold latency, and memory budgets visible
+instead of blending them into an unauditable scalar.
 
 ## Local validation and build
 
