@@ -1,0 +1,642 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Taichi Forge opaque recipe extension &#8212; CompileIQ Documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/autodoc_pydantic.css" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+
+
+    <script src="_static/documentation_options.js?v=c6e86fd7"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=5ceeb459"></script>
+    <script src="_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'taichi_forge_opaque_recipes';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://nvidia.github.io/CompileIQ/versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'latest';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner =
+            false;
+        </script>
+
+    <link rel="canonical" href="https://nvidia.github.io/CompileIQ/latest/taichi_forge_opaque_recipes.html" />
+    <link rel="icon" href="_static/favicon.png"/>
+
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="latest" />
+
+
+  </head>
+
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="CompileIQ Documentation - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="CompileIQ Documentation - Home"/>
+  
+  
+    <p class="title logo__title">CompileIQ Documentation</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+
+
+<div class="version-switcher__container dropdown pst-js-only">
+  <button id="pst-version-switcher-button-2"
+    type="button"
+    class="version-switcher__button btn btn-sm dropdown-toggle"
+    data-bs-toggle="dropdown"
+    aria-haspopup="listbox"
+    aria-controls="pst-version-switcher-list-2"
+    aria-label="Version switcher list"
+  >
+    Choose version  <!-- this text may get changed later by javascript -->
+    <span class="caret"></span>
+  </button>
+  <div id="pst-version-switcher-list-2"
+    class="version-switcher__menu dropdown-menu list-group-flush py-0"
+    role="listbox" aria-labelledby="pst-version-switcher-button-2">
+    <!-- dropdown will be populated by javascript on page load -->
+  </div>
+</div></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/NVIDIA/CompileIQ" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="CompileIQ Documentation - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="CompileIQ Documentation - Home"/>
+  
+  
+    <p class="title logo__title">CompileIQ Documentation</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+
+
+<div class="version-switcher__container dropdown pst-js-only">
+  <button id="pst-version-switcher-button-3"
+    type="button"
+    class="version-switcher__button btn btn-sm dropdown-toggle"
+    data-bs-toggle="dropdown"
+    aria-haspopup="listbox"
+    aria-controls="pst-version-switcher-list-3"
+    aria-label="Version switcher list"
+  >
+    Choose version  <!-- this text may get changed later by javascript -->
+    <span class="caret"></span>
+  </button>
+  <div id="pst-version-switcher-list-3"
+    class="version-switcher__menu dropdown-menu list-group-flush py-0"
+    role="listbox" aria-labelledby="pst-version-switcher-button-3">
+    <!-- dropdown will be populated by javascript on page load -->
+  </div>
+</div></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/NVIDIA/CompileIQ" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Overview</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="install.html">Install Instructions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting_started.html">Getting Started with CompileIQ</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">NVIDIA Compiler Tuning</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="compilers_overview.html">Tuning NVIDIA Compilers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="search_space_release_testing.html">Search-Space Retrieval Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="booster_packs.html">Booster Packs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ptx_spill_example.html">Tuning PTXAS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nvcc_example.html">Tuning NVCC</a></li>
+<li class="toctree-l1"><a class="reference internal" href="triton_example.html">Tuning PTXAS in Triton</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cutile_example.html">Autotuning cuTile parameters</a></li>
+<li class="toctree-l1"><a class="reference internal" href="benchmarking.html">Benchmarking Guidelines</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced Usage</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="workers.html">Choosing how your application executes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="normalization.html">CompileIQ and Normalization</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">More Examples</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="xgboost.html">Fine-tune an XGBoost ML Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="experiment_tracking.html">Experiment Tracking with CompileIQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="flashinfer_booster.html">Applying a Booster Pack to FlashInfer</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Resources</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="search_strategy.html">Search Strategy</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Taichi Forge opaque recipe extension</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="taichi-forge-opaque-recipe-extension">
+<h1>Taichi Forge opaque recipe extension<a class="headerlink" href="#taichi-forge-opaque-recipe-extension" title="Link to this heading">#</a></h1>
+<p>This fork extends CompileIQ with a bounded, provider-neutral recipe domain for
+Taichi Forge high-level optimization plans. The extension does not interpret a
+recipe identifier as a CUDA compiler flag, kernel launch attribute, or source
+parameter. Forge owns recipe legality and materialization; CompileIQ only
+selects among the exact opaque recipes Forge supplies.</p>
+<section id="contracts">
+<h2>Contracts<a class="headerlink" href="#contracts" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">OpaqueRecipeDomainV1</span></code> canonicalizes and fingerprints the provider namespace,
+semantic version, semantic fingerprint, exact CompileIQ capability, bundled
+core identity, and recipe set.</p></li>
+<li><p>Provider recipe identifiers never cross the encrypted core boundary. The
+core sees only fixed ASCII ordinal tokens; the Python layer validates and
+restores the provider-owned identifier before the objective runs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">forge_recipe_search_capability()</span></code> binds the domain to this modified package,
+the bundled core commit, the manifest core lock, and platform file hashes.
+Core binary or manifest overrides are rejected for opaque recipe searches.</p></li>
+<li><p>Every selected token-to-recipe mapping is retained in search result metadata
+as <code class="docutils literal notranslate"><span class="pre">compileiq_opaque_recipe</span></code> audit data.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ForgeMainThreadWorker</span></code> executes Forge objectives serially on the caller’s
+main thread. This is required for process-bound GPU/runtime objects.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PairedIsolatedWorker</span></code> is a separate diagnostic worker for fresh-process
+balanced AB/BA measurements. It does not turn compile time into an admission
+gate and it requires <code class="docutils literal notranslate"><span class="pre">normalize=False</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ForgeOpaqueTargetContractV1</span></code> declares named min/max objectives and inclusive
+hard constraints. It never constructs a hidden weighted score. Infeasible
+recipes remain in the audit result but cannot become a winner or Pareto point.</p></li>
+</ul>
+<p>The provider must include its baseline recipe in <code class="docutils literal notranslate"><span class="pre">recipe_ids</span></code>; this fork does
+not invent a baseline or decide whether a candidate is legal, correct, or safe
+to adopt at runtime.</p>
+</section>
+<section id="minimal-domain-construction">
+<h2>Minimal domain construction<a class="headerlink" href="#minimal-domain-construction" title="Link to this heading">#</a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">compileiq.forge_support</span><span class="w"> </span><span class="kn">import</span> <span class="n">forge_recipe_search_capability</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">compileiq.recipes</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpaqueRecipeDomainV1</span>
+
+<span class="n">capability</span> <span class="o">=</span> <span class="n">forge_recipe_search_capability</span><span class="p">()</span><span class="o">.</span><span class="n">as_dict</span><span class="p">()</span>
+<span class="n">domain</span> <span class="o">=</span> <span class="n">OpaqueRecipeDomainV1</span><span class="p">(</span>
+    <span class="n">provider_namespace</span><span class="o">=</span><span class="s2">&quot;taichi_forge.graph.map_fusion&quot;</span><span class="p">,</span>
+    <span class="n">domain_version</span><span class="o">=</span><span class="s2">&quot;1&quot;</span><span class="p">,</span>
+    <span class="n">provider_semantic_fingerprint</span><span class="o">=</span><span class="s2">&quot;provider-owned-semantic-fingerprint&quot;</span><span class="p">,</span>
+    <span class="n">compileiq_capability_id</span><span class="o">=</span><span class="n">capability</span><span class="p">[</span><span class="s2">&quot;capability_id&quot;</span><span class="p">],</span>
+    <span class="n">compileiq_core_commit</span><span class="o">=</span><span class="n">capability</span><span class="p">[</span><span class="s2">&quot;core_commit&quot;</span><span class="p">],</span>
+    <span class="n">compileiq_core_lock</span><span class="o">=</span><span class="n">capability</span><span class="p">[</span><span class="s2">&quot;core_lock&quot;</span><span class="p">],</span>
+    <span class="n">recipe_ids</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;baseline&quot;</span><span class="p">,</span> <span class="s2">&quot;map2&quot;</span><span class="p">,</span> <span class="s2">&quot;map3&quot;</span><span class="p">,</span> <span class="s2">&quot;map4&quot;</span><span class="p">),</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Pass the domain to <code class="docutils literal notranslate"><span class="pre">compileiq.ciq.Search</span></code> with
+<code class="docutils literal notranslate"><span class="pre">worker_type=ForgeMainThreadWorker</span></code> and a search configuration whose
+<code class="docutils literal notranslate"><span class="pre">normalize</span></code> field is false. The objective receives the exact
+<code class="docutils literal notranslate"><span class="pre">domain_fingerprint</span></code> and restored provider <code class="docutils literal notranslate"><span class="pre">recipe_id</span></code>.</p>
+</section>
+<section id="explicit-objectives-and-constraints">
+<h2>Explicit objectives and constraints<a class="headerlink" href="#explicit-objectives-and-constraints" title="Link to this heading">#</a></h2>
+<p>The deterministic exhaustive route can consume structured observations without
+exposing Forge recipe internals to CompileIQ. Every returned metric must be
+declared by an objective or constraint and must be finite.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">compileiq.forge_support</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ForgeOpaqueConstraintV1</span><span class="p">,</span>
+    <span class="n">ForgeOpaqueObjectiveV1</span><span class="p">,</span>
+    <span class="n">ForgeOpaqueRecipeExhaustiveSearchV1</span><span class="p">,</span>
+    <span class="n">ForgeOpaqueTargetContractV1</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">contract</span> <span class="o">=</span> <span class="n">ForgeOpaqueTargetContractV1</span><span class="p">(</span>
+    <span class="n">objectives</span><span class="o">=</span><span class="p">(</span>
+        <span class="n">ForgeOpaqueObjectiveV1</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;steady_ms&quot;</span><span class="p">,</span> <span class="n">direction</span><span class="o">=</span><span class="s2">&quot;min&quot;</span><span class="p">),</span>
+        <span class="n">ForgeOpaqueObjectiveV1</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;cold_ms&quot;</span><span class="p">,</span> <span class="n">direction</span><span class="o">=</span><span class="s2">&quot;min&quot;</span><span class="p">),</span>
+    <span class="p">),</span>
+    <span class="n">constraints</span><span class="o">=</span><span class="p">(</span>
+        <span class="n">ForgeOpaqueConstraintV1</span><span class="p">(</span>
+            <span class="n">metric</span><span class="o">=</span><span class="s2">&quot;persistent_vram_mib&quot;</span><span class="p">,</span>
+            <span class="n">relation</span><span class="o">=</span><span class="s2">&quot;&lt;=&quot;</span><span class="p">,</span>
+            <span class="n">bound</span><span class="o">=</span><span class="mf">512.0</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">),</span>
+<span class="p">)</span>
+
+<span class="n">search</span> <span class="o">=</span> <span class="n">ForgeOpaqueRecipeExhaustiveSearchV1</span><span class="p">(</span>
+    <span class="n">objective_function</span><span class="o">=</span><span class="k">lambda</span> <span class="n">params</span><span class="p">:</span> <span class="n">evaluate_complete_recipe</span><span class="p">(</span><span class="n">params</span><span class="p">[</span><span class="s2">&quot;recipe_id&quot;</span><span class="p">]),</span>
+    <span class="n">search_space</span><span class="o">=</span><span class="n">domain</span><span class="p">,</span>
+    <span class="n">baseline_recipe_id</span><span class="o">=</span><span class="s2">&quot;baseline&quot;</span><span class="p">,</span>
+    <span class="n">target_contract</span><span class="o">=</span><span class="n">contract</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">search</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="n">frontier</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">pareto_front</span><span class="p">()</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">evaluate_complete_recipe()</span></code> must return exactly <code class="docutils literal notranslate"><span class="pre">steady_ms</span></code>, <code class="docutils literal notranslate"><span class="pre">cold_ms</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">persistent_vram_mib</span></code>. A single-objective contract supports
+<code class="docutils literal notranslate"><span class="pre">get_best_result()</span></code>. A multi-objective contract deliberately rejects that call;
+the caller must inspect <code class="docutils literal notranslate"><span class="pre">pareto_front()</span></code> and apply any product policy outside
+CompileIQ. This keeps steady latency, cold latency, and memory budgets visible
+instead of blending them into an unauditable scalar.</p>
+</section>
+<section id="local-validation-and-build">
+<h2>Local validation and build<a class="headerlink" href="#local-validation-and-build" title="Link to this heading">#</a></h2>
+<div class="highlight-powershell notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="n">-m</span> <span class="n">pytest</span> <span class="n">-q</span> <span class="n">tests</span><span class="p">/</span><span class="n">unit</span>
+<span class="n">python</span> <span class="n">-m</span> <span class="n">pytest</span> <span class="n">-q</span> <span class="n">tests</span><span class="p">/</span><span class="n">integration</span><span class="p">/</span><span class="n">test_core_integration</span><span class="p">.</span><span class="n">py</span> <span class="n">-k</span> <span class="n">opaque_recipe</span>
+<span class="n">ruff</span> <span class="n">check</span> <span class="n">compileiq</span> <span class="n">tests</span>
+<span class="n">python</span> <span class="n">-m</span> <span class="n">pip</span> <span class="n">wheel</span> <span class="p">.</span> <span class="p">-</span><span class="n">-no-deps</span> <span class="p">-</span><span class="n">-no-build-isolation</span> <span class="p">-</span><span class="n">-wheel-dir</span> <span class="n">dist</span>
+</pre></div>
+</div>
+<p>Consumers must additionally lock the fork Git commit and a hash of the Python
+sources that implement the capability, rather than accepting the package
+version string alone.</p>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#contracts">Contracts</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#minimal-domain-construction">Minimal domain construction</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#explicit-objectives-and-constraints">Explicit objectives and constraints</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#local-validation-and-build">Local validation and build</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2026, NVIDIA Corporation.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.2.3.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  </body>
+</html>
