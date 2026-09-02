@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import threading
+
 try:
     import tomllib
 except ModuleNotFoundError:  # Python 3.10
@@ -28,18 +29,21 @@ def test_forge_recipe_capability_is_versioned_and_core_locked():
     capability = forge_recipe_search_capability()
     payload = capability.as_dict()
 
-    assert payload["schema"] == "compileiq.taichi-forge-recipe-search-capability.v1"
-    assert payload["protocol_revision"] == 3
+    assert payload["schema"] == "compileiq.taichi-forge-recipe-search-capability.v2"
+    assert payload["protocol_revision"] == 4
     assert payload["fork_build_id"] == FORGE_RECIPE_SEARCH_FORK_BUILD_ID
     assert payload["package_version"] == FORGE_RECIPE_SEARCH_PACKAGE_VERSION
     assert payload["opaque_recipe_domain_schema"] == ("compileiq.opaque-recipe-domain.v1")
+    assert payload["opaque_recipe_batch_schema"] == ("compileiq.opaque-recipe-batch.v2")
     assert payload["selection_audit_schema"] == ("compileiq.opaque-recipe-selection.v1")
     assert payload["opaque_target_contract_schema"] == (
         "compileiq.taichi-forge-opaque-target-contract.v1"
     )
     assert payload["opaque_target_selection"] == (
-        "explicit_objectives_constraints_pareto_no_scalarization_v1"
+        "uncertainty_aware_pareto_layers_no_scalarization_v2"
     )
+    assert payload["trial_outcome_schema"] == ("compileiq.taichi-forge-trial-outcome.v2")
+    assert payload["search_checkpoint_schema"] == ("compileiq.taichi-forge-search-checkpoint.v2")
     assert payload["max_recipe_ids"] == 4096
     assert payload["provider_recipe_ids_cross_core_boundary"] is False
     assert payload["opaque_domain_binding"] == ("capability_id_core_commit_core_lock")
@@ -47,17 +51,12 @@ def test_forge_recipe_capability_is_versioned_and_core_locked():
         "bundled_manifest_lock_and_platform_hashes_at_search_start_no_override"
     )
     assert payload["objective_worker"] == "forge_main_thread_serial_v1"
-    assert payload["opaque_recipe_search"] == (
-        "bounded_exhaustive_main_thread_v1"
-    )
-    assert payload["fork_build_id"] == (
-        "compileiq-taichi-forge-opaque-recipes.v1.3"
-    )
-    assert payload["package_version"] == (
-        "1.0.0dev3+taichiforge.opaque2"
-    )
+    assert payload["opaque_recipe_search"] == ("budgeted_staged_pareto_racing_main_thread_v2")
+    assert payload["opaque_recipe_search_v1"] == "bounded_exhaustive_main_thread_v1"
+    assert payload["fork_build_id"] == ("compileiq-taichi-forge-complete-recipes.v2")
+    assert payload["package_version"] == ("1.0.0dev4+taichiforge.recipe2")
     assert payload["core_lock"].startswith("sha256:")
-    assert payload["capability_id"].startswith("ciq-forge-cap-v1:")
+    assert payload["capability_id"].startswith("ciq-forge-cap-v2:")
     assert ForgeRecipeSearchCapabilityV1(**payload) == capability
 
 
@@ -93,8 +92,10 @@ def test_forge_worker_executes_serially_on_calling_thread(tmp_path):
     observed = []
 
     scores = worker.run(
-        function=lambda parameters: observed.append((threading.get_ident(), parameters["value"]))
-        or float(parameters["value"]),
+        function=lambda parameters: (
+            observed.append((threading.get_ident(), parameters["value"]))
+            or float(parameters["value"])
+        ),
         params_pool=({"value": 1}, {"value": 2}),
         params_ids=(10, 11),
     )
@@ -122,8 +123,10 @@ def test_forge_exhaustive_search_observes_every_safe_token_once():
     )
     observed = []
     search = ForgeOpaqueRecipeExhaustiveSearchV1(
-        objective_function=lambda params: observed.append(params["recipe_id"])
-        or float(domain.recipe_ids.index(params["recipe_id"])),
+        objective_function=lambda params: (
+            observed.append(params["recipe_id"])
+            or float(domain.recipe_ids.index(params["recipe_id"]))
+        ),
         search_space=domain,
         baseline_recipe_id="plan:baseline",
     )
@@ -161,9 +164,7 @@ def test_forge_opaque_target_selects_best_feasible_single_objective():
     contract = ForgeOpaqueTargetContractV1(
         objectives=(ForgeOpaqueObjectiveV1(name="steady_ms", direction="min"),),
         constraints=(
-            ForgeOpaqueConstraintV1(
-                metric="persistent_vram_mib", relation="<=", bound=150.0
-            ),
+            ForgeOpaqueConstraintV1(metric="persistent_vram_mib", relation="<=", bound=150.0),
         ),
     )
     result = ForgeOpaqueRecipeExhaustiveSearchV1(
@@ -180,9 +181,7 @@ def test_forge_opaque_target_selects_best_feasible_single_objective():
         "balanced",
     }
     rejected = next(
-        item
-        for item in result.get_results()
-        if item["params"]["recipe_id"] == "fast-over-budget"
+        item for item in result.get_results() if item["params"]["recipe_id"] == "fast-over-budget"
     )
     assert rejected["feasible"] is False
     assert rejected["constraint_violations"] == (
@@ -209,9 +208,7 @@ def test_forge_opaque_target_returns_mixed_direction_pareto_without_scalar_winne
             ForgeOpaqueObjectiveV1(name="steady_ms", direction="min"),
             ForgeOpaqueObjectiveV1(name="throughput", direction="max"),
         ),
-        constraints=(
-            ForgeOpaqueConstraintV1(metric="vram_mib", relation="<=", bound=150.0),
-        ),
+        constraints=(ForgeOpaqueConstraintV1(metric="vram_mib", relation="<=", bound=150.0),),
     )
     result = ForgeOpaqueRecipeExhaustiveSearchV1(
         objective_function=lambda params: measurements[params["recipe_id"]],

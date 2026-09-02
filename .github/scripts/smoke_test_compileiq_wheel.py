@@ -4,6 +4,20 @@ from pathlib import Path
 import compileiq.ciq as ciq_module
 import compileiq.search_spaces.base as ss
 from compileiq.ciq import Search
+from compileiq.forge_support import (
+    ForgeOpaqueObjectiveV1,
+    ForgeOpaqueSearchBudgetV2,
+    ForgeOpaqueSearchSessionV2,
+    ForgeOpaqueTargetContractV1,
+    TrialCleanupV2,
+    TrialOutcomeV2,
+    forge_recipe_search_capability,
+)
+from compileiq.recipes import (
+    OpaqueRecipeBatchV2,
+    OpaqueRecipeFidelityV2,
+    OpaqueRecipeLineageV2,
+)
 from compileiq.types import SearchConfiguration
 
 
@@ -23,8 +37,82 @@ def assert_imported_from_wheel():
         raise AssertionError(f"compileiq.ciq was imported from checkout path: {ciq_path}")
 
 
+def assert_forge_v2_checkpoint_resume():
+    capability = forge_recipe_search_capability().as_dict()
+    batch = OpaqueRecipeBatchV2(
+        provider_namespace="wheel.smoke",
+        domain_version="complete-recipes.v2",
+        provider_semantic_fingerprint="wheel-smoke-semantics-v2",
+        compileiq_capability_id=capability["capability_id"],
+        compileiq_core_commit=capability["core_commit"],
+        compileiq_core_lock=capability["core_lock"],
+        stage_index=0,
+        stage_fingerprint="wheel-smoke-stage-v2",
+        fidelity=OpaqueRecipeFidelityV2(
+            name="package",
+            ordinal=0,
+            repeat_count=1,
+        ),
+        recipes=(
+            OpaqueRecipeLineageV2(recipe_id="baseline"),
+            OpaqueRecipeLineageV2(recipe_id="candidate"),
+        ),
+    )
+    target = ForgeOpaqueTargetContractV1(
+        objectives=(ForgeOpaqueObjectiveV1(name="score", direction="min"),)
+    )
+    observed = []
+
+    def evaluate(request):
+        observed.append(request.measurement_key)
+        return TrialOutcomeV2(
+            metrics={"score": 0.0 if request.recipe_id == "candidate" else 1.0},
+            planned_physical_id=f"planned:{request.recipe_id}",
+            materialized_physical_id=f"materialized:{request.recipe_id}",
+            materialized_memory_bytes=0,
+            provenance={"source": "installed-wheel"},
+            cleanup=TrialCleanupV2(
+                status="complete",
+                released_resources=True,
+                detail_code="released",
+            ),
+        )
+
+    partial_session = ForgeOpaqueSearchSessionV2(
+        objective_function=evaluate,
+        baseline_recipe_id="baseline",
+        target_contract=target,
+        budget=ForgeOpaqueSearchBudgetV2(
+            evaluation_limit=1,
+            time_limit_seconds=30.0,
+            materialized_memory_limit_bytes=0,
+        ),
+        deterministic_seed=17,
+    )
+    partial = partial_session.submit_batch(batch)
+    assert partial.termination_reason == "evaluation_budget_exhausted"
+
+    resumed_session = ForgeOpaqueSearchSessionV2(
+        objective_function=evaluate,
+        baseline_recipe_id="baseline",
+        target_contract=target,
+        budget=ForgeOpaqueSearchBudgetV2(
+            evaluation_limit=2,
+            time_limit_seconds=30.0,
+            materialized_memory_limit_bytes=0,
+        ),
+        deterministic_seed=17,
+        checkpoint=partial.checkpoint(),
+    )
+    completed = resumed_session.submit_batch(batch)
+    assert completed.termination_reason == "batch_complete"
+    assert completed.get_best_result()["recipe_id"] == "candidate"
+    assert len(observed) == len(set(observed)) == 2
+
+
 def main():
     assert_imported_from_wheel()
+    assert_forge_v2_checkpoint_resume()
 
     result = Search(
         objective_function=objective,
@@ -39,6 +127,7 @@ def main():
             problem_type="min",
             num_objectives=1,
         ),
+        cache_folder=Path.cwd() / "compileiq-wheel-smoke-cache",
         disable_progress_bar=True,
     ).start()
 

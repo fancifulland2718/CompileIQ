@@ -1181,10 +1181,9 @@ class AsyncWorker(Worker):
         if self.normalize and self.baseline_score is None:
             params_to_run = [BASELINE_CONFIG] + params_to_run
 
-        futures = []
-        async with asyncio.TaskGroup() as tg:
-            for params in params_to_run:
-                task = tg.create_task(
+        completed = list(
+            await asyncio.gather(
+                *(
                     self._function_wrapper(
                         obj_func_args=params,
                         objective_func=function,
@@ -1193,13 +1192,15 @@ class AsyncWorker(Worker):
                         norm_enabled=self.normalize,
                         task_timeout=task_timeout,
                     )
+                    for params in params_to_run
                 )
-                futures.append(task)
+            )
+        )
 
         results = []
         if self.baseline_score is None and self.normalize:
             # Removing baseline future from the list
-            baseline_score: Score = futures.pop(0).result()
+            baseline_score: Score = completed.pop(0)
             baseline_score.param_id = "baseline"
             baseline_score.is_baseline = True
             baseline_score.norm_score = self.normalize_scores(
@@ -1208,8 +1209,7 @@ class AsyncWorker(Worker):
             self.baseline_score = baseline_score
             results.append(self.baseline_score)
 
-        for i, f in enumerate(futures):
-            score: Score = f.result()
+        for i, score in enumerate(completed):
             score.param_id = params_ids[i]
 
             if self.normalize:

@@ -80,7 +80,7 @@ jobs:
         run: python3 dev/check-linux-core-abi.py
 
   unit-test:
-    # Matrix matches `pyproject.toml`'s `python = ">=3.11,<3.14"` and the
+    # Matrix exercises every interpreter in `python = ">=3.10,<3.15"` and the
     # platforms supported per the run-examples job (Linux x86_64, Windows).
     # fail-fast: false so divergence between Python versions or OSes
     # surfaces all at once rather than one-at-a-time.
@@ -91,15 +91,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python: ["3.11", "3.12", "3.13"]
-        exclude:
-          # Ray (a hard dependency, see pyproject.toml) does not yet
-          # publish Windows wheels for Python 3.13 -- "Ray on Windows is
-          # currently in beta" per upstream, with wheel coverage lagging
-          # Linux by several months. Until that catches up, skip this
-          # specific cell. Linux + 3.13 is still exercised below.
-          - os: windows-latest
-            python: "3.13"
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     env:
       POETRY_VIRTUALENVS_CREATE: "false"
       GIT_PYTHON_REFRESH: "quiet"
@@ -121,8 +113,8 @@ jobs:
   integration-test:
     # Run the integration tests against every (OS, Python version)
     # combination this project claims to support: Linux x86_64 + Windows
-    # per the run-examples matrix, Python 3.11/3.12/3.13 per
-    # pyproject.toml's `python = ">=3.11,<3.14"`.
+    # per the run-examples matrix and every Python version admitted by
+    # pyproject.toml's `python = ">=3.10,<3.15"`.
     #
     # An env-divergent regression in any one cell is caught at PR time
     # rather than after the fact downstream. fail-fast: false so all
@@ -135,7 +127,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python: ["3.11", "3.12", "3.13"]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
         include:
           # Known broken: test_single_objective_min flakiness (gen-0
           # dedup collision, ~24% rate on any Python; Python 3.13's RNG
@@ -146,14 +138,6 @@ jobs:
           - os: ubuntu-latest
             python: "3.13"
             known_broken: true
-        exclude:
-          # Ray (a hard dependency, see pyproject.toml) does not yet
-          # publish Windows wheels for Python 3.13 -- "Ray on Windows is
-          # currently in beta" per upstream, with wheel coverage lagging
-          # Linux by several months. Until that catches up, skip this
-          # specific cell. Linux + 3.13 is still exercised below.
-          - os: windows-latest
-            python: "3.13"
     env:
       POETRY_VIRTUALENVS_CREATE: "false"
       GIT_PYTHON_REFRESH: "quiet"
@@ -401,6 +385,28 @@ jobs:
             --workers 1 \
             --expected-sha256 9a232adcc36a6451a4a30f3fe1dbfb29c4476b7b324bcec87bc0f5cc30bbf70d \
             --expected-size 13904
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+          cache: 'pip'
+          cache-dependency-path: 'poetry.lock'
+      - name: Consume the same wheel on Python 3.10
+        shell: bash
+        run: |
+          python -m pip install --force-reinstall dist/*.whl
+          cd "$RUNNER_TEMP"
+          python "$GITHUB_WORKSPACE/.github/scripts/smoke_test_compileiq_wheel.py"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: 'pip'
+          cache-dependency-path: 'poetry.lock'
+      - name: Consume the same wheel on Python 3.14
+        shell: bash
+        run: |
+          python -m pip install --force-reinstall dist/*.whl
+          cd "$RUNNER_TEMP"
+          python "$GITHUB_WORKSPACE/.github/scripts/smoke_test_compileiq_wheel.py"
       - name: Upload smoke-tested wheel artifact
         uses: actions/upload-artifact@v6
         with:

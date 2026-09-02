@@ -1,5 +1,6 @@
 from compileiq.types import BASELINE_CONFIG, INVALID_SCORE
 from compileiq.worker import MultiProcessWorker, AsyncWorker
+import builtins
 import multiprocessing
 import pytest
 import asyncio
@@ -116,7 +117,10 @@ def test_problematic_scores(worker_class, tmp_path):
     )
     assert len(scores) == len(params)
 
-    expected_errors = [ValidationError, RuntimeError, ExceptionGroup]
+    expected_errors = [ValidationError, RuntimeError]
+    exception_group = getattr(builtins, "ExceptionGroup", None)
+    if exception_group is not None:
+        expected_errors.append(exception_group)
     if RayTaskError is not None:
         expected_errors.append(RayTaskError)
     with pytest.raises(tuple(expected_errors)):

@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from compileiq.core.verify_core import MANIFEST_PATH, load_manifest, validate_core_lock
 from compileiq.recipes import (
+    OPAQUE_RECIPE_BATCH_SCHEMA,
     OPAQUE_RECIPE_SELECTION_AUDIT_SCHEMA,
     OpaqueRecipeDomainV1,
 )
@@ -23,12 +24,12 @@ from compileiq.types import Worker
 from compileiq.utils.validation import Score
 
 
-FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA = "compileiq.taichi-forge-recipe-search-capability.v1"
+FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA = "compileiq.taichi-forge-recipe-search-capability.v2"
 FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA = "compileiq.taichi-forge-opaque-target-contract.v1"
-FORGE_RECIPE_SEARCH_FORK_BUILD_ID = "compileiq-taichi-forge-opaque-recipes.v1.3"
-FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev3+taichiforge.opaque2"
-FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 3
-FORGE_RECIPE_SEARCH_CAPABILITY_ID_PREFIX = "ciq-forge-cap-v1:"
+FORGE_RECIPE_SEARCH_FORK_BUILD_ID = "compileiq-taichi-forge-complete-recipes.v2"
+FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev4+taichiforge.recipe2"
+FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 4
+FORGE_RECIPE_SEARCH_CAPABILITY_ID_PREFIX = "ciq-forge-cap-v2:"
 
 
 def _finite_number(value, *, field_name):
@@ -124,8 +125,7 @@ class ForgeOpaqueTargetContractV1(BaseModel):
     def metric_names(self):
         return tuple(
             dict.fromkeys(
-                [item.name for item in self.objectives]
-                + [item.metric for item in self.constraints]
+                [item.name for item in self.objectives] + [item.metric for item in self.constraints]
             )
         )
 
@@ -144,31 +144,40 @@ def _capability_identity(payload: dict[str, object]) -> str:
     return FORGE_RECIPE_SEARCH_CAPABILITY_ID_PREFIX + hashlib.sha256(canonical).hexdigest()
 
 
-class ForgeRecipeSearchCapabilityV1(BaseModel):
+class ForgeRecipeSearchCapabilityV2(BaseModel):
     """Immutable proof that this CompileIQ build supports Forge recipe domains."""
 
     SCHEMA: ClassVar[str] = FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA
 
-    schema_id: Literal["compileiq.taichi-forge-recipe-search-capability.v1"] = Field(
+    schema_id: Literal["compileiq.taichi-forge-recipe-search-capability.v2"] = Field(
         default=SCHEMA, alias="schema"
     )
-    protocol_revision: Literal[3] = FORGE_RECIPE_SEARCH_PROTOCOL_REVISION
-    fork_build_id: Literal["compileiq-taichi-forge-opaque-recipes.v1.3"] = (
+    protocol_revision: Literal[4] = FORGE_RECIPE_SEARCH_PROTOCOL_REVISION
+    fork_build_id: Literal["compileiq-taichi-forge-complete-recipes.v2"] = (
         FORGE_RECIPE_SEARCH_FORK_BUILD_ID
     )
-    package_version: Literal["1.0.0dev3+taichiforge.opaque2"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
+    package_version: Literal["1.0.0dev4+taichiforge.recipe2"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
     opaque_recipe_domain_schema: Literal["compileiq.opaque-recipe-domain.v1"] = (
         OpaqueRecipeDomainV1.SCHEMA
+    )
+    opaque_recipe_batch_schema: Literal["compileiq.opaque-recipe-batch.v2"] = (
+        OPAQUE_RECIPE_BATCH_SCHEMA
     )
     selection_audit_schema: Literal["compileiq.opaque-recipe-selection.v1"] = (
         OPAQUE_RECIPE_SELECTION_AUDIT_SCHEMA
     )
-    opaque_target_contract_schema: Literal[
-        "compileiq.taichi-forge-opaque-target-contract.v1"
-    ] = FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA
-    opaque_target_selection: Literal[
-        "explicit_objectives_constraints_pareto_no_scalarization_v1"
-    ] = "explicit_objectives_constraints_pareto_no_scalarization_v1"
+    opaque_target_contract_schema: Literal["compileiq.taichi-forge-opaque-target-contract.v1"] = (
+        FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA
+    )
+    opaque_target_selection: Literal["uncertainty_aware_pareto_layers_no_scalarization_v2"] = (
+        "uncertainty_aware_pareto_layers_no_scalarization_v2"
+    )
+    trial_outcome_schema: Literal["compileiq.taichi-forge-trial-outcome.v2"] = (
+        "compileiq.taichi-forge-trial-outcome.v2"
+    )
+    search_checkpoint_schema: Literal["compileiq.taichi-forge-search-checkpoint.v2"] = (
+        "compileiq.taichi-forge-search-checkpoint.v2"
+    )
     max_recipe_ids: int = OpaqueRecipeDomainV1.MAX_RECIPE_IDS
     max_field_utf8_bytes: int = OpaqueRecipeDomainV1.MAX_FIELD_UTF8_BYTES
     max_canonical_bytes: int = OpaqueRecipeDomainV1.MAX_CANONICAL_BYTES
@@ -180,7 +189,10 @@ class ForgeRecipeSearchCapabilityV1(BaseModel):
         "capability_id_core_commit_core_lock"
     )
     objective_worker: Literal["forge_main_thread_serial_v1"] = "forge_main_thread_serial_v1"
-    opaque_recipe_search: Literal["bounded_exhaustive_main_thread_v1"] = (
+    opaque_recipe_search: Literal["budgeted_staged_pareto_racing_main_thread_v2"] = (
+        "budgeted_staged_pareto_racing_main_thread_v2"
+    )
+    opaque_recipe_search_v1: Literal["bounded_exhaustive_main_thread_v1"] = (
         "bounded_exhaustive_main_thread_v1"
     )
     core_manifest_schema_version: int
@@ -196,7 +208,7 @@ class ForgeRecipeSearchCapabilityV1(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _validate_identity(self) -> "ForgeRecipeSearchCapabilityV1":
+    def _validate_identity(self) -> "ForgeRecipeSearchCapabilityV2":
         if isinstance(self.core_manifest_schema_version, bool) or (
             self.core_manifest_schema_version < 1
         ):
@@ -226,7 +238,7 @@ class ForgeRecipeSearchCapabilityV1(BaseModel):
 
 def forge_recipe_search_capability(
     manifest_path: str | Path = MANIFEST_PATH,
-) -> ForgeRecipeSearchCapabilityV1:
+) -> ForgeRecipeSearchCapabilityV2:
     """Return a fail-closed capability bound to the packaged core manifest."""
 
     manifest = load_manifest(Path(manifest_path))
@@ -250,11 +262,12 @@ def forge_recipe_search_capability(
         "fork_build_id": FORGE_RECIPE_SEARCH_FORK_BUILD_ID,
         "package_version": FORGE_RECIPE_SEARCH_PACKAGE_VERSION,
         "opaque_recipe_domain_schema": OpaqueRecipeDomainV1.SCHEMA,
+        "opaque_recipe_batch_schema": OPAQUE_RECIPE_BATCH_SCHEMA,
         "selection_audit_schema": OPAQUE_RECIPE_SELECTION_AUDIT_SCHEMA,
         "opaque_target_contract_schema": FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA,
-        "opaque_target_selection": (
-            "explicit_objectives_constraints_pareto_no_scalarization_v1"
-        ),
+        "opaque_target_selection": ("uncertainty_aware_pareto_layers_no_scalarization_v2"),
+        "trial_outcome_schema": "compileiq.taichi-forge-trial-outcome.v2",
+        "search_checkpoint_schema": "compileiq.taichi-forge-search-checkpoint.v2",
         "max_recipe_ids": OpaqueRecipeDomainV1.MAX_RECIPE_IDS,
         "max_field_utf8_bytes": OpaqueRecipeDomainV1.MAX_FIELD_UTF8_BYTES,
         "max_canonical_bytes": OpaqueRecipeDomainV1.MAX_CANONICAL_BYTES,
@@ -264,12 +277,13 @@ def forge_recipe_search_capability(
         ),
         "opaque_domain_binding": "capability_id_core_commit_core_lock",
         "objective_worker": "forge_main_thread_serial_v1",
-        "opaque_recipe_search": "bounded_exhaustive_main_thread_v1",
+        "opaque_recipe_search": "budgeted_staged_pareto_racing_main_thread_v2",
+        "opaque_recipe_search_v1": "bounded_exhaustive_main_thread_v1",
         "core_manifest_schema_version": schema_version,
         "core_commit": core_commit,
         "core_lock": core_lock,
     }
-    return ForgeRecipeSearchCapabilityV1(
+    return ForgeRecipeSearchCapabilityV2(
         **payload,
         capability_id=_capability_identity(payload),
     )
@@ -315,7 +329,7 @@ class ForgeMainThreadWorker(Worker):
             raise ValueError("ForgeMainThreadWorker does not support task timeouts")
         if kwargs:
             raise TypeError(
-                "ForgeMainThreadWorker received unsupported options " f"{sorted(kwargs)!r}"
+                f"ForgeMainThreadWorker received unsupported options {sorted(kwargs)!r}"
             )
         active_tracker = self.tracker if tracker is None else tracker
         scores = []
@@ -362,16 +376,13 @@ class ForgeOpaqueRecipeExhaustiveResultV1:
     def get_feasible_results(self):
         if self._target_contract is None:
             return self.get_results()
-        return tuple(
-            copy.deepcopy(item) for item in self._observations if item["feasible"]
-        )
+        return tuple(copy.deepcopy(item) for item in self._observations if item["feasible"])
 
     def get_best_result(self):
         if self._target_contract is not None:
             if len(self._target_contract.objectives) != 1:
                 raise ValueError(
-                    "multi-objective opaque results have no scalar winner; "
-                    "use pareto_front()"
+                    "multi-objective opaque results have no scalar winner; use pareto_front()"
                 )
             feasible = self.get_feasible_results()
             if not feasible:
@@ -472,13 +483,8 @@ class ForgeOpaqueRecipeExhaustiveSearchV1:
             "compileiq_core_commit": self._capability["core_commit"],
             "compileiq_core_lock": self._capability["core_lock"],
         }
-        if any(
-            getattr(search_space, name) != value
-            for name, value in required.items()
-        ):
-            raise RuntimeError(
-                "opaque domain is not bound to this exact modified CompileIQ"
-            )
+        if any(getattr(search_space, name) != value for name, value in required.items()):
+            raise RuntimeError("opaque domain is not bound to this exact modified CompileIQ")
         self._objective_function = objective_function
         self._search_space = search_space
         self._baseline_recipe_id = baseline_recipe_id
@@ -551,9 +557,7 @@ class ForgeOpaqueRecipeExhaustiveSearchV1:
 
     def start(self):
         if threading.current_thread() is not threading.main_thread():
-            raise RuntimeError(
-                "opaque exhaustive search must run on the Python main thread"
-            )
+            raise RuntimeError("opaque exhaustive search must run on the Python main thread")
         observations = []
         audits = []
         for ordinal, token in enumerate(self._search_space._core_recipe_tokens):
@@ -587,8 +591,7 @@ class ForgeOpaqueRecipeExhaustiveSearchV1:
                     {
                         "metrics": metrics,
                         "objective_values": tuple(
-                            metrics[item.name]
-                            for item in self._target_contract.objectives
+                            metrics[item.name] for item in self._target_contract.objectives
                         ),
                         "feasible": not violations,
                         "constraint_violations": violations,
@@ -604,6 +607,25 @@ class ForgeOpaqueRecipeExhaustiveSearchV1:
         )
 
 
+from compileiq.forge_search_v2 import (  # noqa: E402
+    ForgeOpaqueSearchBudgetV2,
+    ForgeOpaqueSearchCheckpointV2,
+    ForgeOpaqueSearchResultV2,
+    ForgeOpaqueSearchSessionV2,
+    ForgeOpaqueStageResultV2,
+    TrialCleanupV2,
+    TrialFailureV2,
+    TrialOutcomeV2,
+    TrialRecordV2,
+    TrialRequestV2,
+)
+
+
+# Source-compatible name for V1 users; the capability envelope now advertises
+# both the retained exhaustive protocol and the Forge V2 staged protocol.
+ForgeRecipeSearchCapabilityV1 = ForgeRecipeSearchCapabilityV2
+
+
 __all__ = [
     "FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA",
     "FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA",
@@ -615,7 +637,18 @@ __all__ = [
     "ForgeOpaqueObjectiveV1",
     "ForgeOpaqueRecipeExhaustiveResultV1",
     "ForgeOpaqueRecipeExhaustiveSearchV1",
+    "ForgeOpaqueSearchBudgetV2",
+    "ForgeOpaqueSearchCheckpointV2",
+    "ForgeOpaqueSearchResultV2",
+    "ForgeOpaqueSearchSessionV2",
+    "ForgeOpaqueStageResultV2",
     "ForgeOpaqueTargetContractV1",
     "ForgeRecipeSearchCapabilityV1",
+    "ForgeRecipeSearchCapabilityV2",
+    "TrialCleanupV2",
+    "TrialFailureV2",
+    "TrialOutcomeV2",
+    "TrialRecordV2",
+    "TrialRequestV2",
     "forge_recipe_search_capability",
 ]
