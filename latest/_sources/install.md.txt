@@ -14,7 +14,7 @@ pip install -e .
 
 ## Supported Platforms
 
-CompileIQ supports Python 3.11, 3.12, and 3.13. Published wheels include the
+CompileIQ supports Python 3.10, 3.11, 3.12, 3.13, and 3.14. Published wheels include the
 bundled CompileIQ core for:
 
 - Linux x86_64

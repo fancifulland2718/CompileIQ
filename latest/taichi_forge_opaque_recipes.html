@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Taichi Forge opaque recipe extension &#8212; CompileIQ Documentation</title>
+    <title>Taichi Forge complete-recipe extension &#8212; CompileIQ Documentation</title>
   
   
   
@@ -65,6 +65,7 @@
 
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Search Strategy" href="search_strategy.html" />
 
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -377,9 +378,10 @@
 <li class="toctree-l1"><a class="reference internal" href="flashinfer_booster.html">Applying a Booster Pack to FlashInfer</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Resources</span></p>
-<ul class="nav bd-sidenav">
+<ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Documentation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="search_strategy.html">Search Strategy</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Taichi Forge opaque recipes</a></li>
 </ul>
 </div>
 </nav></div>
@@ -414,7 +416,7 @@
         <i class="fa-solid fa-home"></i>
       </a>
     </li>
-    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Taichi Forge opaque recipe extension</span></li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Taichi Forge complete-recipe extension</span></li>
   </ul>
 </nav>
 </div>
@@ -431,116 +433,243 @@
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="taichi-forge-opaque-recipe-extension">
-<h1>Taichi Forge opaque recipe extension<a class="headerlink" href="#taichi-forge-opaque-recipe-extension" title="Link to this heading">#</a></h1>
-<p>This fork extends CompileIQ with a bounded, provider-neutral recipe domain for
-Taichi Forge high-level optimization plans. The extension does not interpret a
-recipe identifier as a CUDA compiler flag, kernel launch attribute, or source
-parameter. Forge owns recipe legality and materialization; CompileIQ only
-selects among the exact opaque recipes Forge supplies.</p>
-<section id="contracts">
-<h2>Contracts<a class="headerlink" href="#contracts" title="Link to this heading">#</a></h2>
+  <section id="taichi-forge-complete-recipe-extension">
+<h1>Taichi Forge complete-recipe extension<a class="headerlink" href="#taichi-forge-complete-recipe-extension" title="Link to this heading">#</a></h1>
+<p>This maintained fork gives Taichi Forge a bounded, provider-neutral scheduler
+for complete Graph recipes. Forge owns Graph semantics, candidate generation,
+legality, materialization, physical identity, and final product policy.
+CompileIQ sees only opaque recipe identities, lineage, fidelity, budgets, and
+named measurements.</p>
+<p>This is not a second path for ordinary PTXAS/NVCC controls. A raw block size,
+workgroup shape, backend route, tile, or single-kernel parameter is not a valid
+V2 recipe. Each submitted identity must already describe one complete physical
+alternative that Forge can materialize and measure.</p>
+<section id="v2-protocol">
+<h2>V2 protocol<a class="headerlink" href="#v2-protocol" title="Link to this heading">#</a></h2>
+<p>The current protocol is composed from these public models:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">OpaqueRecipeDomainV1</span></code> canonicalizes and fingerprints the provider namespace,
-semantic version, semantic fingerprint, exact CompileIQ capability, bundled
-core identity, and recipe set.</p></li>
-<li><p>Provider recipe identifiers never cross the encrypted core boundary. The
-core sees only fixed ASCII ordinal tokens; the Python layer validates and
-restores the provider-owned identifier before the objective runs.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">forge_recipe_search_capability()</span></code> binds the domain to this modified package,
-the bundled core commit, the manifest core lock, and platform file hashes.
-Core binary or manifest overrides are rejected for opaque recipe searches.</p></li>
-<li><p>Every selected token-to-recipe mapping is retained in search result metadata
-as <code class="docutils literal notranslate"><span class="pre">compileiq_opaque_recipe</span></code> audit data.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ForgeMainThreadWorker</span></code> executes Forge objectives serially on the caller’s
-main thread. This is required for process-bound GPU/runtime objects.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">PairedIsolatedWorker</span></code> is a separate diagnostic worker for fresh-process
-balanced AB/BA measurements. It does not turn compile time into an admission
-gate and it requires <code class="docutils literal notranslate"><span class="pre">normalize=False</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ForgeOpaqueTargetContractV1</span></code> declares named min/max objectives and inclusive
-hard constraints. It never constructs a hidden weighted score. Infeasible
-recipes remain in the audit result but cannot become a winner or Pareto point.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">OpaqueDynamicRecipeDomainV2</span></code> freezes the provider registry, generation
+domain, assembly protocols, recipe schema, search strategy, capability, and
+bundled-core identity for one session.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">OpaqueRecipeBatchV2</span></code> submits one canonical stage. Every entry is an
+<code class="docutils literal notranslate"><span class="pre">OpaqueRecipeLineageV2</span></code> with a complete recipe ID, planned physical ID,
+immediate parents, and optional materialized-memory estimate.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">OpaqueRecipeFidelityV2</span></code> gives each stage a non-decreasing fidelity ordinal,
+repeat count, work scale, and explicit terminal flag.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ForgeOpaqueEvaluationContextV1</span></code> binds observations to the caller’s workload,
+evaluation, and backend-environment identities. <code class="docutils literal notranslate"><span class="pre">reuse_scope=&quot;portable&quot;</span></code>
+permits checkpoint reuse only when that entire session contract matches.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ForgeOpaqueSearchSessionV2</span></code> evaluates batches serially on the caller’s main
+thread, keeps the baseline in every stage, enforces evaluation/time/memory
+budgets, and returns deterministic survivor lineage and a Pareto frontier.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ForgeOpaqueSearchCheckpointV2</span></code> is the only supported resume payload. It
+contains batches, measurement keys, structured outcomes, stage results,
+status, and optional finalization.</p></li>
 </ul>
-<p>The provider must include its baseline recipe in <code class="docutils literal notranslate"><span class="pre">recipe_ids</span></code>; this fork does
-not invent a baseline or decide whether a candidate is legal, correct, or safe
-to adopt at runtime.</p>
+<p>Provider recipe identifiers never cross the encrypted core boundary. Each
+batch is compiled through the existing <code class="docutils literal notranslate"><span class="pre">OpaqueRecipeDomainV1</span></code> ordinal-token
+codec; the Python layer validates the token and restores the provider-owned ID
+before the objective runs.</p>
+<p>The V1 fixed-domain exhaustive API remains available for compatibility. New
+Forge integrations should use V2 because V1 cannot express survivor-driven
+batches, fidelity changes, portable checkpoints, or the complete report
+contract.</p>
 </section>
-<section id="minimal-domain-construction">
-<h2>Minimal domain construction<a class="headerlink" href="#minimal-domain-construction" title="Link to this heading">#</a></h2>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">compileiq.forge_support</span><span class="w"> </span><span class="kn">import</span> <span class="n">forge_recipe_search_capability</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">compileiq.recipes</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpaqueRecipeDomainV1</span>
+<section id="minimal-staged-session">
+<h2>Minimal staged session<a class="headerlink" href="#minimal-staged-session" title="Link to this heading">#</a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">compileiq.forge_support</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ForgeOpaqueEvaluationContextV1</span><span class="p">,</span>
+    <span class="n">ForgeOpaqueObjectiveV1</span><span class="p">,</span>
+    <span class="n">ForgeOpaqueSearchBudgetV2</span><span class="p">,</span>
+    <span class="n">ForgeOpaqueSearchFinalizationV1</span><span class="p">,</span>
+    <span class="n">ForgeOpaqueSearchSessionV2</span><span class="p">,</span>
+    <span class="n">ForgeOpaqueTargetContractV1</span><span class="p">,</span>
+    <span class="n">TrialCleanupV2</span><span class="p">,</span>
+    <span class="n">TrialOutcomeV2</span><span class="p">,</span>
+    <span class="n">forge_recipe_search_capability</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">compileiq.recipes</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">OpaqueDynamicRecipeDomainV2</span><span class="p">,</span>
+    <span class="n">OpaqueRecipeBatchV2</span><span class="p">,</span>
+    <span class="n">OpaqueRecipeFidelityV2</span><span class="p">,</span>
+    <span class="n">OpaqueRecipeLineageV2</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="n">capability</span> <span class="o">=</span> <span class="n">forge_recipe_search_capability</span><span class="p">()</span><span class="o">.</span><span class="n">as_dict</span><span class="p">()</span>
-<span class="n">domain</span> <span class="o">=</span> <span class="n">OpaqueRecipeDomainV1</span><span class="p">(</span>
-    <span class="n">provider_namespace</span><span class="o">=</span><span class="s2">&quot;taichi_forge.graph.map_fusion&quot;</span><span class="p">,</span>
-    <span class="n">domain_version</span><span class="o">=</span><span class="s2">&quot;1&quot;</span><span class="p">,</span>
-    <span class="n">provider_semantic_fingerprint</span><span class="o">=</span><span class="s2">&quot;provider-owned-semantic-fingerprint&quot;</span><span class="p">,</span>
+<span class="n">domain</span> <span class="o">=</span> <span class="n">OpaqueDynamicRecipeDomainV2</span><span class="p">(</span>
+    <span class="n">provider_namespace</span><span class="o">=</span><span class="s2">&quot;my_forge_provider&quot;</span><span class="p">,</span>
+    <span class="n">domain_version</span><span class="o">=</span><span class="s2">&quot;complete-recipes.v1&quot;</span><span class="p">,</span>
+    <span class="n">generation_domain_id</span><span class="o">=</span><span class="s2">&quot;semantic-graph-and-provider-fingerprint&quot;</span><span class="p">,</span>
+    <span class="n">provider_registry_id</span><span class="o">=</span><span class="s2">&quot;provider-registry-fingerprint&quot;</span><span class="p">,</span>
+    <span class="n">assembly_protocols</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;provider_owned_whole_graph.v1&quot;</span><span class="p">,),</span>
+    <span class="n">recipe_schema</span><span class="o">=</span><span class="s2">&quot;my-complete-graph-recipe.v1&quot;</span><span class="p">,</span>
+    <span class="n">search_strategy_id</span><span class="o">=</span><span class="s2">&quot;my-staged-strategy.v1&quot;</span><span class="p">,</span>
     <span class="n">compileiq_capability_id</span><span class="o">=</span><span class="n">capability</span><span class="p">[</span><span class="s2">&quot;capability_id&quot;</span><span class="p">],</span>
     <span class="n">compileiq_core_commit</span><span class="o">=</span><span class="n">capability</span><span class="p">[</span><span class="s2">&quot;core_commit&quot;</span><span class="p">],</span>
     <span class="n">compileiq_core_lock</span><span class="o">=</span><span class="n">capability</span><span class="p">[</span><span class="s2">&quot;core_lock&quot;</span><span class="p">],</span>
-    <span class="n">recipe_ids</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;baseline&quot;</span><span class="p">,</span> <span class="s2">&quot;map2&quot;</span><span class="p">,</span> <span class="s2">&quot;map3&quot;</span><span class="p">,</span> <span class="s2">&quot;map4&quot;</span><span class="p">),</span>
 <span class="p">)</span>
-</pre></div>
-</div>
-<p>Pass the domain to <code class="docutils literal notranslate"><span class="pre">compileiq.ciq.Search</span></code> with
-<code class="docutils literal notranslate"><span class="pre">worker_type=ForgeMainThreadWorker</span></code> and a search configuration whose
-<code class="docutils literal notranslate"><span class="pre">normalize</span></code> field is false. The objective receives the exact
-<code class="docutils literal notranslate"><span class="pre">domain_fingerprint</span></code> and restored provider <code class="docutils literal notranslate"><span class="pre">recipe_id</span></code>.</p>
-</section>
-<section id="explicit-objectives-and-constraints">
-<h2>Explicit objectives and constraints<a class="headerlink" href="#explicit-objectives-and-constraints" title="Link to this heading">#</a></h2>
-<p>The deterministic exhaustive route can consume structured observations without
-exposing Forge recipe internals to CompileIQ. Every returned metric must be
-declared by an objective or constraint and must be finite.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">compileiq.forge_support</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">ForgeOpaqueConstraintV1</span><span class="p">,</span>
-    <span class="n">ForgeOpaqueObjectiveV1</span><span class="p">,</span>
-    <span class="n">ForgeOpaqueRecipeExhaustiveSearchV1</span><span class="p">,</span>
-    <span class="n">ForgeOpaqueTargetContractV1</span><span class="p">,</span>
-<span class="p">)</span>
-
-<span class="n">contract</span> <span class="o">=</span> <span class="n">ForgeOpaqueTargetContractV1</span><span class="p">(</span>
-    <span class="n">objectives</span><span class="o">=</span><span class="p">(</span>
-        <span class="n">ForgeOpaqueObjectiveV1</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;steady_ms&quot;</span><span class="p">,</span> <span class="n">direction</span><span class="o">=</span><span class="s2">&quot;min&quot;</span><span class="p">),</span>
-        <span class="n">ForgeOpaqueObjectiveV1</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;cold_ms&quot;</span><span class="p">,</span> <span class="n">direction</span><span class="o">=</span><span class="s2">&quot;min&quot;</span><span class="p">),</span>
+<span class="n">batch</span> <span class="o">=</span> <span class="n">OpaqueRecipeBatchV2</span><span class="p">(</span>
+    <span class="n">provider_namespace</span><span class="o">=</span><span class="n">domain</span><span class="o">.</span><span class="n">provider_namespace</span><span class="p">,</span>
+    <span class="n">domain_version</span><span class="o">=</span><span class="n">domain</span><span class="o">.</span><span class="n">domain_version</span><span class="p">,</span>
+    <span class="n">provider_semantic_fingerprint</span><span class="o">=</span><span class="n">domain</span><span class="o">.</span><span class="n">generation_domain_id</span><span class="p">,</span>
+    <span class="n">compileiq_capability_id</span><span class="o">=</span><span class="n">capability</span><span class="p">[</span><span class="s2">&quot;capability_id&quot;</span><span class="p">],</span>
+    <span class="n">compileiq_core_commit</span><span class="o">=</span><span class="n">capability</span><span class="p">[</span><span class="s2">&quot;core_commit&quot;</span><span class="p">],</span>
+    <span class="n">compileiq_core_lock</span><span class="o">=</span><span class="n">capability</span><span class="p">[</span><span class="s2">&quot;core_lock&quot;</span><span class="p">],</span>
+    <span class="n">stage_index</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">stage_fingerprint</span><span class="o">=</span><span class="s2">&quot;stage-zero-fingerprint&quot;</span><span class="p">,</span>
+    <span class="n">fidelity</span><span class="o">=</span><span class="n">OpaqueRecipeFidelityV2</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;screen&quot;</span><span class="p">,</span>
+        <span class="n">ordinal</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="n">repeat_count</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+        <span class="n">terminal</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="p">),</span>
-    <span class="n">constraints</span><span class="o">=</span><span class="p">(</span>
-        <span class="n">ForgeOpaqueConstraintV1</span><span class="p">(</span>
-            <span class="n">metric</span><span class="o">=</span><span class="s2">&quot;persistent_vram_mib&quot;</span><span class="p">,</span>
-            <span class="n">relation</span><span class="o">=</span><span class="s2">&quot;&lt;=&quot;</span><span class="p">,</span>
-            <span class="n">bound</span><span class="o">=</span><span class="mf">512.0</span><span class="p">,</span>
+    <span class="n">recipes</span><span class="o">=</span><span class="p">(</span>
+        <span class="n">OpaqueRecipeLineageV2</span><span class="p">(</span>
+            <span class="n">recipe_id</span><span class="o">=</span><span class="s2">&quot;baseline&quot;</span><span class="p">,</span>
+            <span class="n">planned_physical_id</span><span class="o">=</span><span class="s2">&quot;planned:baseline&quot;</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">OpaqueRecipeLineageV2</span><span class="p">(</span>
+            <span class="n">recipe_id</span><span class="o">=</span><span class="s2">&quot;candidate-a&quot;</span><span class="p">,</span>
+            <span class="n">planned_physical_id</span><span class="o">=</span><span class="s2">&quot;planned:candidate-a&quot;</span><span class="p">,</span>
         <span class="p">),</span>
     <span class="p">),</span>
 <span class="p">)</span>
 
-<span class="n">search</span> <span class="o">=</span> <span class="n">ForgeOpaqueRecipeExhaustiveSearchV1</span><span class="p">(</span>
-    <span class="n">objective_function</span><span class="o">=</span><span class="k">lambda</span> <span class="n">params</span><span class="p">:</span> <span class="n">evaluate_complete_recipe</span><span class="p">(</span><span class="n">params</span><span class="p">[</span><span class="s2">&quot;recipe_id&quot;</span><span class="p">]),</span>
-    <span class="n">search_space</span><span class="o">=</span><span class="n">domain</span><span class="p">,</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+    <span class="n">metrics</span><span class="p">,</span> <span class="n">physical_id</span><span class="p">,</span> <span class="n">peak_bytes</span> <span class="o">=</span> <span class="n">measure_complete_recipe</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">recipe_id</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">TrialOutcomeV2</span><span class="p">(</span>
+        <span class="n">metrics</span><span class="o">=</span><span class="n">metrics</span><span class="p">,</span>
+        <span class="n">planned_physical_id</span><span class="o">=</span><span class="n">batch</span><span class="o">.</span><span class="n">recipe</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">recipe_id</span><span class="p">)</span><span class="o">.</span><span class="n">planned_physical_id</span><span class="p">,</span>
+        <span class="n">materialized_physical_id</span><span class="o">=</span><span class="n">physical_id</span><span class="p">,</span>
+        <span class="n">materialized_memory_bytes</span><span class="o">=</span><span class="n">peak_bytes</span><span class="p">,</span>
+        <span class="n">provenance</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;application-evaluator&quot;</span><span class="p">},</span>
+        <span class="n">cleanup</span><span class="o">=</span><span class="n">TrialCleanupV2</span><span class="p">(</span>
+            <span class="n">status</span><span class="o">=</span><span class="s2">&quot;complete&quot;</span><span class="p">,</span>
+            <span class="n">released_resources</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">detail_code</span><span class="o">=</span><span class="s2">&quot;released&quot;</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+
+<span class="n">session</span> <span class="o">=</span> <span class="n">ForgeOpaqueSearchSessionV2</span><span class="p">(</span>
+    <span class="n">objective_function</span><span class="o">=</span><span class="n">evaluate</span><span class="p">,</span>
+    <span class="n">dynamic_domain</span><span class="o">=</span><span class="n">domain</span><span class="p">,</span>
+    <span class="n">evaluation_context</span><span class="o">=</span><span class="n">ForgeOpaqueEvaluationContextV1</span><span class="p">(</span>
+        <span class="n">reuse_scope</span><span class="o">=</span><span class="s2">&quot;portable&quot;</span><span class="p">,</span>
+        <span class="n">workload_context_id</span><span class="o">=</span><span class="s2">&quot;workload-fingerprint&quot;</span><span class="p">,</span>
+        <span class="n">evaluation_contract_id</span><span class="o">=</span><span class="s2">&quot;measurement-contract-fingerprint&quot;</span><span class="p">,</span>
+        <span class="n">backend_environment_id</span><span class="o">=</span><span class="s2">&quot;driver-device-runtime-fingerprint&quot;</span><span class="p">,</span>
+    <span class="p">),</span>
     <span class="n">baseline_recipe_id</span><span class="o">=</span><span class="s2">&quot;baseline&quot;</span><span class="p">,</span>
-    <span class="n">target_contract</span><span class="o">=</span><span class="n">contract</span><span class="p">,</span>
+    <span class="n">target_contract</span><span class="o">=</span><span class="n">ForgeOpaqueTargetContractV1</span><span class="p">(</span>
+        <span class="n">objectives</span><span class="o">=</span><span class="p">(</span>
+            <span class="n">ForgeOpaqueObjectiveV1</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;device_time_ns&quot;</span><span class="p">,</span> <span class="n">direction</span><span class="o">=</span><span class="s2">&quot;min&quot;</span><span class="p">),</span>
+        <span class="p">),</span>
+    <span class="p">),</span>
+    <span class="n">budget</span><span class="o">=</span><span class="n">ForgeOpaqueSearchBudgetV2</span><span class="p">(</span>
+        <span class="n">evaluation_limit</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span>
+        <span class="n">time_limit_seconds</span><span class="o">=</span><span class="mf">300.0</span><span class="p">,</span>
+        <span class="n">materialized_memory_limit_bytes</span><span class="o">=</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">30</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">deterministic_seed</span><span class="o">=</span><span class="mi">17</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="n">result</span> <span class="o">=</span> <span class="n">search</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
-<span class="n">frontier</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">pareto_front</span><span class="p">()</span>
+<span class="n">partial</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">submit_batch</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
+<span class="n">checkpoint</span> <span class="o">=</span> <span class="n">partial</span><span class="o">.</span><span class="n">checkpoint</span><span class="p">()</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">evaluate_complete_recipe()</span></code> must return exactly <code class="docutils literal notranslate"><span class="pre">steady_ms</span></code>, <code class="docutils literal notranslate"><span class="pre">cold_ms</span></code>, and
-<code class="docutils literal notranslate"><span class="pre">persistent_vram_mib</span></code>. A single-objective contract supports
-<code class="docutils literal notranslate"><span class="pre">get_best_result()</span></code>. A multi-objective contract deliberately rejects that call;
-the caller must inspect <code class="docutils literal notranslate"><span class="pre">pareto_front()</span></code> and apply any product policy outside
-CompileIQ. This keeps steady latency, cold latency, and memory budgets visible
-instead of blending them into an unauditable scalar.</p>
+<p>Forge, rather than CompileIQ, decides which survivor combinations or
+provider-owned neighbours form the next complete batch. A later stage names
+the previous <code class="docutils literal notranslate"><span class="pre">batch_fingerprint</span></code>, declares an immediate parent for every
+recipe, and uses a strictly increasing stage index and non-decreasing fidelity
+ordinal. Every stage retains the same baseline recipe.</p>
+<p>When provider generation is complete, the caller seals the evidence with
+<code class="docutils literal notranslate"><span class="pre">ForgeOpaqueSearchFinalizationV1</span></code>. An evaluation/time budget interruption is
+left unfinalized so the checkpoint can resume missing measurement keys without
+repeating existing observations.</p>
+</section>
+<section id="results-and-reports">
+<h2>Results and reports<a class="headerlink" href="#results-and-reports" title="Link to this heading">#</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">ForgeOpaqueSearchResultV2.report(detail=&quot;full&quot;)</span></code> returns an immutable
+<code class="docutils literal notranslate"><span class="pre">OpaqueOptimizationReportV1</span></code>. It is a measurement fact source, not an
+application recommendation. The report contains:</p>
+<ul class="simple">
+<li><p>structured complete/partial/failed status and termination reason;</p></li>
+<li><p>session, target, budget, stage, survivor, and lineage facts;</p></li>
+<li><p>per-candidate metric bounds, feasibility, physical IDs, memory, and failures;</p></li>
+<li><p>the unsquashed multi-objective Pareto frontier and baseline comparisons;</p></li>
+<li><p>warnings for incomplete evidence, failures, and unavailable comparisons;</p></li>
+<li><p>the canonical checkpoint digest, with the payload embedded only in a full
+report.</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">report.to_dict()</span></code> and <code class="docutils literal notranslate"><span class="pre">report.to_json()</span></code> are the agent-facing fact source.
+<code class="docutils literal notranslate"><span class="pre">report.to_markdown()</span></code> is rendered deterministically from the same facts for
+human review. A summary report omits trial records and the checkpoint payload,
+but retains the same <code class="docutils literal notranslate"><span class="pre">report_id</span></code> because that identity includes the checkpoint
+digest. A summary cannot reconstruct omitted full facts.</p>
+<p>The checked-in JSON Schema is
+<code class="docutils literal notranslate"><span class="pre">schemas/opaque-optimization-report-v1.schema.json</span></code>; the runtime equivalent is
+returned by <code class="docutils literal notranslate"><span class="pre">opaque_optimization_report_json_schema()</span></code>. Consumers must reject
+an unknown schema instead of coercing it. Schema evolution uses a new model and
+schema ID; this fork does not silently upgrade checkpoints or reports whose
+contract no longer matches.</p>
+<p>CompileIQ does not choose a scalar winner for a multi-objective contract.
+Forge or another caller may apply an explicit ordered policy to the measured
+Pareto frontier, but that enrichment must not rewrite CompileIQ metrics,
+failures, lineage, or provenance.</p>
+</section>
+<section id="resume-and-reuse-boundary">
+<h2>Resume and reuse boundary<a class="headerlink" href="#resume-and-reuse-boundary" title="Link to this heading">#</a></h2>
+<p>A V2 session accepts a checkpoint only when all of these still match:</p>
+<ul class="simple">
+<li><p>dynamic domain and provider registry;</p></li>
+<li><p>workload, evaluation, and backend-environment identities;</p></li>
+<li><p>baseline recipe and deterministic seed;</p></li>
+<li><p>CompileIQ capability, core commit, and core lock;</p></li>
+<li><p>batch lineage, planned physical identities, and the resumed budget.</p></li>
+</ul>
+<p>A checkpoint that exceeds the new evaluation or time budget is rejected.
+Duplicate measurement keys, inconsistent stage status, poisoned cleanup, or
+identity drift are also rejected. CompileIQ does not serialize Forge Python
+materializers or Graph executables. Cross-process recipe resolution is a Forge
+responsibility: the application recreates an equivalent semantic Graph and
+provider catalog, then resolves the stable recipe ID.</p>
+</section>
+<section id="capability-and-package-provenance">
+<h2>Capability and package provenance<a class="headerlink" href="#capability-and-package-provenance" title="Link to this heading">#</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">forge_recipe_search_capability()</span></code> binds this protocol to the modified package,
+the bundled core commit and manifest lock, and hashes of packaged core files.
+Core binary or manifest overrides are rejected for opaque recipe search.
+Taichi Forge accepts a wheel by its V2 protocol epoch, required schemas, API
+surface, and self-consistent capability identity. It computes the complete
+installed Python source identity at runtime and binds that identity to a search
+session and its checkpoints, so resuming with different code fails explicitly.
+The fork Git commit, platform wheel SHA-256, and package version describe a
+qualified snapshot; they are recorded for audit but are not installation
+allowlists. A later compatible fork build therefore does not require a Taichi
+source change merely because its commit, wheel filename, or source identity
+changed.</p>
+<p>The fork supports Python 3.10 through 3.14. CI builds one platform wheel per
+Linux x86_64, Linux aarch64, and Windows amd64 target, then installs and runs the
+same wheel under Python 3.10 and 3.14 in addition to the build interpreter.
+Unit and integration matrices cover every supported minor version. Platform
+wheels contain only their matching bundled core.</p>
 </section>
 <section id="local-validation-and-build">
 <h2>Local validation and build<a class="headerlink" href="#local-validation-and-build" title="Link to this heading">#</a></h2>
 <div class="highlight-powershell notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="n">-m</span> <span class="n">pytest</span> <span class="n">-q</span> <span class="n">tests</span><span class="p">/</span><span class="n">unit</span>
 <span class="n">python</span> <span class="n">-m</span> <span class="n">pytest</span> <span class="n">-q</span> <span class="n">tests</span><span class="p">/</span><span class="n">integration</span><span class="p">/</span><span class="n">test_core_integration</span><span class="p">.</span><span class="n">py</span> <span class="n">-k</span> <span class="n">opaque_recipe</span>
-<span class="n">ruff</span> <span class="n">check</span> <span class="n">compileiq</span> <span class="n">tests</span>
-<span class="n">python</span> <span class="n">-m</span> <span class="n">pip</span> <span class="n">wheel</span> <span class="p">.</span> <span class="p">-</span><span class="n">-no-deps</span> <span class="p">-</span><span class="n">-no-build-isolation</span> <span class="p">-</span><span class="n">-wheel-dir</span> <span class="n">dist</span>
+<span class="n">ruff</span> <span class="n">check</span> <span class="n">compileiq</span> <span class="n">tests</span> <span class="p">.</span><span class="n">github</span><span class="p">/</span><span class="n">scripts</span><span class="p">/</span><span class="n">smoke_test_compileiq_wheel</span><span class="p">.</span><span class="n">py</span>
+<span class="n">python</span> <span class="n">-m</span> <span class="n">pip</span> <span class="n">install</span> <span class="n">poetry</span> <span class="n">wheel</span>
+<span class="n">poetry</span> <span class="n">build</span> <span class="o">-f</span> <span class="n">wheel</span>
+<span class="n">wheel</span> <span class="n">tags</span> <span class="p">-</span><span class="n">-platform-tag</span> <span class="n">win_amd64</span> <span class="p">-</span><span class="n">-remove</span> <span class="n">dist</span><span class="p">/*.</span><span class="n">whl</span>
+<span class="n">python</span> <span class="n">-m</span> <span class="n">pip</span> <span class="n">install</span> <span class="p">-</span><span class="n">-force-reinstall</span> <span class="n">dist</span><span class="p">/*.</span><span class="n">whl</span>
+<span class="n">python</span> <span class="p">.</span><span class="n">github</span><span class="p">/</span><span class="n">scripts</span><span class="p">/</span><span class="n">smoke_test_compileiq_wheel</span><span class="p">.</span><span class="n">py</span>
 </pre></div>
 </div>
-<p>Consumers must additionally lock the fork Git commit and a hash of the Python
-sources that implement the capability, rather than accepting the package
-version string alone.</p>
+<p>Run the installed-wheel smoke outside the repository checkout (as CI does) so
+the import cannot fall back to local sources. Record the fork commit, platform
+wheel SHA-256, capability ID, bundled-core lock, and Python-source lock with
+any qualification artifact. These values reproduce that qualification result;
+protocol compatibility remains the runtime acceptance contract.</p>
 </section>
 </section>
 
@@ -554,6 +683,15 @@ version string alone.</p>
                 <footer class="prev-next-footer d-print-none">
                   
 <div class="prev-next-area">
+    <a class="left-prev"
+       href="search_strategy.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Search Strategy</p>
+      </div>
+    </a>
 </div>
                 </footer>
               
@@ -575,9 +713,11 @@ version string alone.</p>
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#contracts">Contracts</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#minimal-domain-construction">Minimal domain construction</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#explicit-objectives-and-constraints">Explicit objectives and constraints</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#v2-protocol">V2 protocol</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#minimal-staged-session">Minimal staged session</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#results-and-reports">Results and reports</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#resume-and-reuse-boundary">Resume and reuse boundary</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#capability-and-package-provenance">Capability and package provenance</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#local-validation-and-build">Local validation and build</a></li>
 </ul>
   </nav></div>
