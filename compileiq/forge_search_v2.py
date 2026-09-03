@@ -523,6 +523,22 @@ class ForgeOpaqueSearchResultV2:
     def checkpoint(self) -> ForgeOpaqueSearchCheckpointV2:
         return self._checkpoint.model_copy(deep=True)
 
+    def report(self, *, detail: Literal["summary", "full"] = "full"):
+        """Return a deterministic, detached report over the retained facts."""
+
+        from compileiq.forge_report import build_opaque_optimization_report
+
+        return build_opaque_optimization_report(
+            checkpoint=self._checkpoint,
+            target_contract=self._target_contract.model_dump(by_alias=True),
+            budget=self._budget,
+            capability=self._capability,
+            current_aggregates=self.get_results(),
+            pareto_front=self.pareto_front(),
+            termination_reason=self._termination_reason,
+            detail=detail,
+        )
+
     def get_results(self) -> tuple[dict[str, object], ...]:
         return tuple(copy.deepcopy(item) for item in self._aggregates)
 
