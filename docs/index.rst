@@ -47,6 +47,7 @@ CompileIQ Documentation
 
    api
    Search Strategy <search_strategy>
+   Taichi Forge opaque recipes <taichi_forge_opaque_recipes>
 
 
 What is CompileIQ?

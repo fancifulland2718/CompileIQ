@@ -41,7 +41,7 @@ pip install -e .
 
 ## Supported platforms
 
-CompileIQ supports Python 3.11, 3.12, and 3.13. Published wheels include the
+CompileIQ supports Python 3.10, 3.11, 3.12, 3.13, and 3.14. Published wheels include the
 bundled CompileIQ core for Linux x86_64, Linux aarch64, and Windows amd64.
 
 Linux wheels target glibc 2.34 or newer and are tagged `manylinux_2_34`. See
@@ -70,12 +70,13 @@ Browse the published [Search Space Catalog Releases](https://github.com/NVIDIA/C
 
 ## Taichi Forge fork extension
 
-The maintained Taichi Forge fork adds a provider-neutral opaque recipe domain
-for complete high-level optimization plans, plus explicit multi-objective and
-hard-constraint selection. It is deliberately separate from CompileIQ's
-ordinary PTXAS/NVCC search-space support. See
+The maintained Taichi Forge fork adds provider-neutral, staged opaque search
+for complete high-level optimization recipes, resumable checkpoints, and
+deterministic JSON/Markdown reports. It is deliberately separate from
+CompileIQ's ordinary PTXAS/NVCC search-space support. See
 [Taichi Forge opaque recipes](docs/taichi_forge_opaque_recipes.md) for the
-capability lock, worker contracts, build procedure, and integration boundary.
+capability lock, V2 protocol, report schema, build procedure, and integration
+boundary.
 
 ## Environment Configuration Options
 
