@@ -11,6 +11,7 @@ from compileiq.recipes import (
     OPAQUE_RECIPE_DOMAIN_FINGERPRINT_KEY,
     OPAQUE_RECIPE_ID_KEY,
     OPAQUE_RECIPE_SELECTION_AUDIT_SCHEMA,
+    OpaqueDynamicRecipeDomainV2,
     OpaqueRecipeDomainV1,
 )
 from compileiq.search_spaces.models import ChoiceParamConfig, LiteralParamConfig
@@ -31,6 +32,57 @@ def _domain(**overrides):
     }
     fields.update(overrides)
     return OpaqueRecipeDomainV1(**fields)
+
+
+def _dynamic_domain(**overrides):
+    capability = forge_recipe_search_capability().as_dict()
+    fields = {
+        "provider_namespace": "forge.taichi.graph",
+        "domain_version": "complete-recipes.v2",
+        "generation_domain_id": "generation:graph-a",
+        "provider_registry_id": "providers:graph-a",
+        "assembly_protocols": (
+            "provider_owned_whole_graph.v1",
+            "taichi_forge.runtime_graph_recipe.v1",
+        ),
+        "recipe_schema": "taichi_forge.complete_graph_recipe.v2",
+        "search_strategy_id": "exact-if-bounded-else-staged.v1",
+        "compileiq_capability_id": capability["capability_id"],
+        "compileiq_core_commit": capability["core_commit"],
+        "compileiq_core_lock": capability["core_lock"],
+    }
+    fields.update(overrides)
+    return OpaqueDynamicRecipeDomainV2(**fields)
+
+
+def test_dynamic_domain_identity_is_stable_without_a_recipe_id_snapshot():
+    forward = _dynamic_domain(
+        assembly_protocols=(
+            "taichi_forge.runtime_graph_recipe.v1",
+            "provider_owned_whole_graph.v1",
+        )
+    )
+    reverse = _dynamic_domain()
+
+    assert forward == reverse
+    assert forward.domain_fingerprint == reverse.domain_fingerprint
+    assert "recipe_ids" not in forward.model_dump(by_alias=True)
+    assert forward.domain_fingerprint.startswith("ciq-dynamic-domain-v2:")
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("generation_domain_id", "generation:graph-b"),
+        ("provider_registry_id", "providers:graph-b"),
+        ("search_strategy_id", "different-strategy.v1"),
+        ("recipe_schema", "different-recipe.v1"),
+    ],
+)
+def test_dynamic_domain_fingerprint_binds_generation_contract(field, value):
+    assert _dynamic_domain(**{field: value}).domain_fingerprint != (
+        _dynamic_domain().domain_fingerprint
+    )
 
 
 def _make_search(mocker, mock_socket_listen, tmp_path, domain=None, objective=None):
@@ -58,7 +110,7 @@ def test_opaque_recipe_domain_v1_has_stable_golden_fingerprint():
 
     assert domain.recipe_ids == ("recipe:alpha", "recipe:zeta")
     assert domain.domain_fingerprint == (
-        "ciq-domain-v1:557504894a48162b2cfffe68c8004bd2da6d81a5f779ce33bab7cc656a1e6333"
+        "ciq-domain-v1:0d6a802a3a39fe2e3d01562f1c29c588a83b87aae1ac6439e49e0fdd4080c80a"
     )
     assert domain.model_dump(by_alias=True)["schema"] == domain.SCHEMA
 

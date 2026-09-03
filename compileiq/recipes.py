@@ -17,6 +17,7 @@ from compileiq.search_spaces.models import ParamConfig
 OPAQUE_RECIPE_DOMAIN_FINGERPRINT_KEY = "domain_fingerprint"
 OPAQUE_RECIPE_ID_KEY = "recipe_id"
 OPAQUE_RECIPE_SELECTION_AUDIT_SCHEMA = "compileiq.opaque-recipe-selection.v1"
+OPAQUE_DYNAMIC_RECIPE_DOMAIN_SCHEMA = "compileiq.opaque-dynamic-recipe-domain.v2"
 OPAQUE_RECIPE_BATCH_SCHEMA = "compileiq.opaque-recipe-batch.v2"
 OPAQUE_RECIPE_FIDELITY_SCHEMA = "compileiq.opaque-recipe-fidelity.v2"
 OPAQUE_RECIPE_LINEAGE_SCHEMA = "compileiq.opaque-recipe-lineage.v2"
@@ -43,6 +44,88 @@ def _bounded_nonempty_text(value: object, *, field_name: str, limit: int = 4096)
     if len(encoded) > limit:
         raise ValueError(f"{field_name} exceeds the {limit} byte limit")
     return value
+
+
+class OpaqueDynamicRecipeDomainV2(BaseModel):
+    """Stable generation contract for a recipe set discovered over time.
+
+    Unlike :class:`OpaqueRecipeDomainV1`, this model deliberately does not
+    contain recipe identifiers. A provider can therefore submit later batches
+    without changing the identity of the search session. CompileIQ treats all
+    fields as opaque identity material and never interprets Graph semantics.
+    """
+
+    SCHEMA: ClassVar[str] = OPAQUE_DYNAMIC_RECIPE_DOMAIN_SCHEMA
+    FINGERPRINT_PREFIX: ClassVar[str] = "ciq-dynamic-domain-v2:"
+
+    schema_id: Literal["compileiq.opaque-dynamic-recipe-domain.v2"] = Field(
+        default=SCHEMA,
+        alias="schema",
+    )
+    provider_namespace: str
+    domain_version: str
+    generation_domain_id: str
+    provider_registry_id: str
+    assembly_protocols: tuple[str, ...]
+    recipe_schema: str
+    search_strategy_id: str
+    compileiq_capability_id: str
+    compileiq_core_commit: str
+    compileiq_core_lock: str
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        populate_by_name=True,
+        strict=True,
+    )
+
+    @field_validator("assembly_protocols", mode="before")
+    @classmethod
+    def _normalize_protocols(cls, value: Any) -> tuple[object, ...]:
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("assembly_protocols must be a list or tuple")
+        return tuple(value)
+
+    @model_validator(mode="after")
+    def _validate_domain(self) -> "OpaqueDynamicRecipeDomainV2":
+        for name in (
+            "provider_namespace",
+            "domain_version",
+            "generation_domain_id",
+            "provider_registry_id",
+            "recipe_schema",
+            "search_strategy_id",
+            "compileiq_capability_id",
+            "compileiq_core_commit",
+            "compileiq_core_lock",
+        ):
+            _bounded_nonempty_text(getattr(self, name), field_name=name)
+        if not self.assembly_protocols:
+            raise ValueError("dynamic recipe domain requires an assembly protocol")
+        protocols = []
+        for protocol in self.assembly_protocols:
+            _bounded_nonempty_text(protocol, field_name="assembly_protocol", limit=256)
+            protocols.append(protocol)
+        if len(protocols) != len(set(protocols)):
+            raise ValueError("dynamic recipe domain contains duplicate assembly protocols")
+        object.__setattr__(
+            self,
+            "assembly_protocols",
+            tuple(sorted(protocols, key=lambda item: item.encode("utf-8"))),
+        )
+        if not self.compileiq_capability_id.startswith("ciq-forge-cap-v2:"):
+            raise ValueError("compileiq_capability_id is not a V2 Forge capability identity")
+        if not self.compileiq_core_lock.startswith("sha256:"):
+            raise ValueError("compileiq_core_lock is not a sha256 identity")
+        return self
+
+    @cached_property
+    def domain_fingerprint(self) -> str:
+        return _canonical_identity(
+            self.FINGERPRINT_PREFIX,
+            self.model_dump(by_alias=True),
+        )
 
 
 class OpaqueRecipeDomainV1(BaseModel):
@@ -266,6 +349,7 @@ class OpaqueRecipeLineageV2(BaseModel):
         alias="schema",
     )
     recipe_id: str
+    planned_physical_id: str
     parent_recipe_ids: tuple[str, ...] = ()
     estimated_materialized_bytes: int = 0
 
@@ -286,6 +370,10 @@ class OpaqueRecipeLineageV2(BaseModel):
     @model_validator(mode="after")
     def _validate_lineage(self) -> "OpaqueRecipeLineageV2":
         _bounded_nonempty_text(self.recipe_id, field_name="recipe_id")
+        _bounded_nonempty_text(
+            self.planned_physical_id,
+            field_name="planned_physical_id",
+        )
         parents = []
         seen = set()
         for parent in self.parent_recipe_ids:
@@ -318,6 +406,7 @@ class OpaqueRecipeFidelityV2(BaseModel):
     ordinal: int
     repeat_count: int
     work_scale: float = 1.0
+    terminal: bool = False
 
     model_config = ConfigDict(
         extra="forbid",
@@ -341,6 +430,8 @@ class OpaqueRecipeFidelityV2(BaseModel):
         ):
             raise ValueError("fidelity work_scale must be finite and positive")
         object.__setattr__(self, "work_scale", float(self.work_scale))
+        if not isinstance(self.terminal, bool):
+            raise ValueError("fidelity terminal must be a bool")
         return self
 
     @cached_property
@@ -472,6 +563,7 @@ class OpaqueRecipeBatchV2(BaseModel):
 
 
 __all__ = [
+    "OPAQUE_DYNAMIC_RECIPE_DOMAIN_SCHEMA",
     "OPAQUE_RECIPE_BATCH_SCHEMA",
     "OPAQUE_RECIPE_DOMAIN_FINGERPRINT_KEY",
     "OPAQUE_RECIPE_FIDELITY_SCHEMA",
@@ -479,6 +571,7 @@ __all__ = [
     "OPAQUE_RECIPE_LINEAGE_SCHEMA",
     "OPAQUE_RECIPE_SELECTION_AUDIT_SCHEMA",
     "OpaqueRecipeBatchV2",
+    "OpaqueDynamicRecipeDomainV2",
     "OpaqueRecipeDomainV1",
     "OpaqueRecipeFidelityV2",
     "OpaqueRecipeLineageV2",

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "compileiq"
-version = "1.0.0dev4+taichiforge.recipe2"
+version = "1.0.0dev5+taichiforge.recipe2"
 description = "NVIDIA compiler control optimization engine."
 authors = ["NVIDIA Corporation"]
 maintainers = ["CompileIQ Team <compileiq@nvidia.com>"]

@@ -13,7 +13,7 @@ from typing import Any, Callable, ClassVar, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from compileiq.recipes import OpaqueRecipeBatchV2
+from compileiq.recipes import OpaqueDynamicRecipeDomainV2, OpaqueRecipeBatchV2
 
 
 FORGE_OPAQUE_SEARCH_BUDGET_SCHEMA = "compileiq.taichi-forge-search-budget.v2"
@@ -21,6 +21,10 @@ FORGE_OPAQUE_TRIAL_REQUEST_SCHEMA = "compileiq.taichi-forge-trial-request.v2"
 FORGE_OPAQUE_TRIAL_OUTCOME_SCHEMA = "compileiq.taichi-forge-trial-outcome.v2"
 FORGE_OPAQUE_SEARCH_CHECKPOINT_SCHEMA = "compileiq.taichi-forge-search-checkpoint.v2"
 FORGE_OPAQUE_STAGE_RESULT_SCHEMA = "compileiq.taichi-forge-stage-result.v2"
+FORGE_OPAQUE_EVALUATION_CONTEXT_SCHEMA = "compileiq.taichi-forge-evaluation-context.v1"
+FORGE_OPAQUE_FINALIZATION_SCHEMA = "compileiq.taichi-forge-search-finalization.v1"
+FORGE_OPAQUE_PHYSICAL_DUPLICATE_SCHEMA = "compileiq.taichi-forge-physical-duplicate.v2"
+FORGE_OPAQUE_SEARCH_STATUS_SCHEMA = "compileiq.taichi-forge-search-status.v2"
 
 
 def _canonical_identity(prefix: str, payload: object) -> str:
@@ -91,6 +95,150 @@ class ForgeOpaqueSearchBudgetV2(BaseModel):
         ):
             raise ValueError("materialized_memory_limit_bytes must be a nonnegative integer")
         return self
+
+
+class ForgeOpaqueEvaluationContextV1(BaseModel):
+    """Opaque identity of the workload and measurement implementation."""
+
+    SCHEMA: ClassVar[str] = FORGE_OPAQUE_EVALUATION_CONTEXT_SCHEMA
+
+    schema_id: Literal["compileiq.taichi-forge-evaluation-context.v1"] = Field(
+        default=SCHEMA,
+        alias="schema",
+    )
+    reuse_scope: Literal["session_only", "portable"]
+    workload_context_id: str
+    evaluation_contract_id: str
+    backend_environment_id: str
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        populate_by_name=True,
+        strict=True,
+    )
+
+    @model_validator(mode="after")
+    def _validate_context(self) -> "ForgeOpaqueEvaluationContextV1":
+        for name in (
+            "workload_context_id",
+            "evaluation_contract_id",
+            "backend_environment_id",
+        ):
+            _nonempty_text(getattr(self, name), field_name=name)
+        return self
+
+
+class ForgeOpaquePhysicalDuplicateV2(BaseModel):
+    """Stable alias to the bytewise-smallest recipe for one physical plan."""
+
+    SCHEMA: ClassVar[str] = FORGE_OPAQUE_PHYSICAL_DUPLICATE_SCHEMA
+
+    schema_id: Literal["compileiq.taichi-forge-physical-duplicate.v2"] = Field(
+        default=SCHEMA,
+        alias="schema",
+    )
+    kind: Literal["planned", "materialized"]
+    physical_id: str
+    alias_recipe_id: str
+    representative_recipe_id: str
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        populate_by_name=True,
+        strict=True,
+    )
+
+    @model_validator(mode="after")
+    def _validate_duplicate(self) -> "ForgeOpaquePhysicalDuplicateV2":
+        for name in ("physical_id", "alias_recipe_id", "representative_recipe_id"):
+            _nonempty_text(getattr(self, name), field_name=name)
+        if self.alias_recipe_id == self.representative_recipe_id:
+            raise ValueError("physical duplicate alias must differ from its representative")
+        if self.representative_recipe_id.encode("utf-8") >= self.alias_recipe_id.encode("utf-8"):
+            raise ValueError("physical duplicate representative must be bytewise smallest")
+        return self
+
+
+class ForgeOpaqueSearchFinalizationV1(BaseModel):
+    """Provider-owned statement about candidate generation completeness."""
+
+    SCHEMA: ClassVar[str] = FORGE_OPAQUE_FINALIZATION_SCHEMA
+
+    schema_id: Literal["compileiq.taichi-forge-search-finalization.v1"] = Field(
+        default=SCHEMA,
+        alias="schema",
+    )
+    generation_status: Literal[
+        "exhaustive",
+        "strategy_complete",
+        "budget_limited",
+        "provider_failed",
+    ]
+    terminal_fidelity_status: Literal["complete", "partial", "not_reached"]
+    reason: str
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        populate_by_name=True,
+        strict=True,
+    )
+
+    @field_validator("reason")
+    @classmethod
+    def _validate_reason(cls, value: str) -> str:
+        return _nonempty_text(value, field_name="finalization reason")
+
+
+class ForgeOpaqueSearchStatusV2(BaseModel):
+    """Orthogonal search, evidence, baseline, and decision state."""
+
+    SCHEMA: ClassVar[str] = FORGE_OPAQUE_SEARCH_STATUS_SCHEMA
+
+    schema_id: Literal["compileiq.taichi-forge-search-status.v2"] = Field(
+        default=SCHEMA,
+        alias="schema",
+    )
+    terminal_state: Literal[
+        "active",
+        "complete",
+        "budget_exhausted",
+        "no_new_physical_identity",
+        "all_failed",
+        "poisoned",
+        "provider_failed",
+    ]
+    generation_status: Literal[
+        "not_finalized",
+        "exhaustive",
+        "strategy_complete",
+        "budget_limited",
+        "provider_failed",
+    ]
+    evaluation_status: Literal["not_started", "partial", "complete", "failed"]
+    terminal_fidelity_status: Literal["complete", "partial", "not_reached"]
+    baseline_status: Literal["available", "failed", "unavailable"]
+    decision_status: Literal[
+        "selected",
+        "pareto_only",
+        "no_feasible_candidate",
+        "incomplete_evidence",
+    ]
+    reason: str
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        populate_by_name=True,
+        strict=True,
+    )
+
+    @field_validator("reason")
+    @classmethod
+    def _validate_status_reason(cls, value: str) -> str:
+        return _nonempty_text(value, field_name="search status reason")
 
 
 class TrialFailureV2(BaseModel):
@@ -277,6 +425,7 @@ class ForgeOpaqueStageResultV2(BaseModel):
     fidelity_fingerprint: str
     evaluated_recipe_ids: tuple[str, ...]
     survivor_recipe_ids: tuple[str, ...]
+    physical_duplicates: tuple[ForgeOpaquePhysicalDuplicateV2, ...] = ()
     complete: bool
 
     model_config = ConfigDict(
@@ -286,11 +435,16 @@ class ForgeOpaqueStageResultV2(BaseModel):
         strict=True,
     )
 
-    @field_validator("evaluated_recipe_ids", "survivor_recipe_ids", mode="before")
+    @field_validator(
+        "evaluated_recipe_ids",
+        "survivor_recipe_ids",
+        "physical_duplicates",
+        mode="before",
+    )
     @classmethod
     def _normalize_recipe_ids(cls, value: Any) -> tuple[object, ...]:
         if not isinstance(value, (list, tuple)):
-            raise ValueError("stage recipe IDs must be lists or tuples")
+            raise ValueError("stage collections must be lists or tuples")
         return tuple(value)
 
 
@@ -304,6 +458,8 @@ class ForgeOpaqueSearchCheckpointV2(BaseModel):
         alias="schema",
     )
     session_fingerprint: str
+    dynamic_domain: OpaqueDynamicRecipeDomainV2
+    evaluation_context: ForgeOpaqueEvaluationContextV1
     baseline_recipe_id: str
     deterministic_seed: int
     elapsed_seconds: float
@@ -311,6 +467,8 @@ class ForgeOpaqueSearchCheckpointV2(BaseModel):
     batches: tuple[OpaqueRecipeBatchV2, ...]
     records: tuple[TrialRecordV2, ...]
     stages: tuple[ForgeOpaqueStageResultV2, ...]
+    finalization: ForgeOpaqueSearchFinalizationV1 | None = None
+    status: ForgeOpaqueSearchStatusV2
 
     model_config = ConfigDict(
         extra="forbid",
@@ -344,6 +502,7 @@ class ForgeOpaqueSearchResultV2:
         self._termination_reason = session.termination_reason
         self._budget = session._budget.model_dump(by_alias=True)
         self._capability = dict(session._capability)
+        self._status = session.status
 
     @property
     def termination_reason(self) -> str:
@@ -356,6 +515,10 @@ class ForgeOpaqueSearchResultV2:
     @property
     def capability(self) -> dict[str, object]:
         return dict(self._capability)
+
+    @property
+    def status(self) -> ForgeOpaqueSearchStatusV2:
+        return self._status.model_copy(deep=True)
 
     def checkpoint(self) -> ForgeOpaqueSearchCheckpointV2:
         return self._checkpoint.model_copy(deep=True)
@@ -379,6 +542,11 @@ class ForgeOpaqueSearchResultV2:
         )
 
     def get_best_result(self) -> dict[str, object]:
+        if self._status.decision_status != "selected":
+            raise ValueError(
+                "opaque results do not have terminal single-objective evidence; "
+                f"decision_status={self._status.decision_status!r}"
+            )
         if len(self._target_contract.objectives) != 1:
             raise ValueError(
                 "multi-objective opaque results have no scalar winner; use pareto_front()"
@@ -428,12 +596,14 @@ class ForgeOpaqueSearchResultV2:
 class ForgeOpaqueSearchSessionV2:
     """Budgeted, resumable, uncertainty-aware Pareto racing over batches."""
 
-    PROTOCOL = "budgeted_staged_pareto_racing_main_thread_v2"
+    PROTOCOL = "dynamic_batch_pareto_racing_main_thread_v2"
 
     def __init__(
         self,
         *,
         objective_function: Callable[[TrialRequestV2], TrialOutcomeV2],
+        dynamic_domain: OpaqueDynamicRecipeDomainV2,
+        evaluation_context: ForgeOpaqueEvaluationContextV1,
         baseline_recipe_id: str,
         target_contract,
         budget: ForgeOpaqueSearchBudgetV2,
@@ -450,6 +620,10 @@ class ForgeOpaqueSearchSessionV2:
 
         if not callable(objective_function):
             raise TypeError("objective_function must be callable")
+        if not isinstance(dynamic_domain, OpaqueDynamicRecipeDomainV2):
+            raise TypeError("dynamic_domain must be an OpaqueDynamicRecipeDomainV2")
+        if not isinstance(evaluation_context, ForgeOpaqueEvaluationContextV1):
+            raise TypeError("evaluation_context must be a ForgeOpaqueEvaluationContextV1")
         _nonempty_text(baseline_recipe_id, field_name="baseline_recipe_id")
         if not isinstance(target_contract, ForgeOpaqueTargetContractV1):
             raise TypeError("target_contract must be a ForgeOpaqueTargetContractV1")
@@ -465,6 +639,8 @@ class ForgeOpaqueSearchSessionV2:
             raise TypeError("clock must be callable")
 
         self._objective_function = objective_function
+        self._dynamic_domain = dynamic_domain
+        self._evaluation_context = evaluation_context
         self._baseline_recipe_id = baseline_recipe_id
         self._target_contract = target_contract
         self._budget = budget
@@ -473,11 +649,20 @@ class ForgeOpaqueSearchSessionV2:
         self._minimum_survivors = minimum_survivors
         self._clock = clock or time.monotonic
         self._capability = forge_recipe_search_capability().as_dict()
+        for domain_field, capability_field in (
+            ("compileiq_capability_id", "capability_id"),
+            ("compileiq_core_commit", "core_commit"),
+            ("compileiq_core_lock", "core_lock"),
+        ):
+            if getattr(dynamic_domain, domain_field) != self._capability[capability_field]:
+                raise ValueError("dynamic domain is not bound to this exact CompileIQ build")
         self._session_fingerprint = _canonical_identity(
             "ciq-forge-session-v2:",
             {
                 "protocol": self.PROTOCOL,
                 "capability_id": self._capability["capability_id"],
+                "dynamic_domain": dynamic_domain.model_dump(by_alias=True),
+                "evaluation_context": evaluation_context.model_dump(by_alias=True),
                 "baseline_recipe_id": baseline_recipe_id,
                 "target_contract": target_contract.as_dict(),
                 "deterministic_seed": deterministic_seed,
@@ -492,7 +677,8 @@ class ForgeOpaqueSearchSessionV2:
         self._elapsed_seconds = 0.0
         self._active_started_at: float | None = None
         self._termination_reason = "not_started"
-        self._provider_identity: tuple[str, str, str] | None = None
+        self._finalization: ForgeOpaqueSearchFinalizationV1 | None = None
+        self._status = self._derive_status("not_started")
         if checkpoint is not None:
             self._restore(checkpoint)
 
@@ -507,6 +693,10 @@ class ForgeOpaqueSearchSessionV2:
     @property
     def termination_reason(self) -> str:
         return self._termination_reason
+
+    @property
+    def status(self) -> ForgeOpaqueSearchStatusV2:
+        return self._status.model_copy(deep=True)
 
     @property
     def observations(self) -> tuple[TrialRecordV2, ...]:
@@ -526,6 +716,108 @@ class ForgeOpaqueSearchSessionV2:
             "verification": "bundled_manifest_lock_at_search_start",
         }
 
+    def _terminal_stage(self) -> ForgeOpaqueStageResultV2 | None:
+        by_fingerprint = {batch.batch_fingerprint: batch for batch in self._batches}
+        terminal = [
+            stage
+            for stage in self._stages
+            if by_fingerprint[stage.batch_fingerprint].fidelity.terminal
+        ]
+        return terminal[-1] if terminal else None
+
+    def _derive_status(self, reason: str) -> ForgeOpaqueSearchStatusV2:
+        finalization = self._finalization
+        generation_status = (
+            "not_finalized" if finalization is None else finalization.generation_status
+        )
+        terminal_stage = self._terminal_stage()
+        inferred_terminal_fidelity = (
+            "not_reached"
+            if terminal_stage is None
+            else ("complete" if terminal_stage.complete else "partial")
+        )
+        terminal_fidelity_status = (
+            inferred_terminal_fidelity
+            if finalization is None
+            else finalization.terminal_fidelity_status
+        )
+        aggregates = self._current_aggregates()
+        feasible = [item for item in aggregates if item["feasible"]]
+        baseline_status = "unavailable"
+        if self._batches:
+            stage = self._stages[-1] if self._stages else None
+            representative = self._baseline_recipe_id
+            if stage is not None:
+                alias = next(
+                    (
+                        item
+                        for item in stage.physical_duplicates
+                        if item.alias_recipe_id == self._baseline_recipe_id
+                    ),
+                    None,
+                )
+                if alias is not None:
+                    representative = alias.representative_recipe_id
+            baseline = next(
+                (item for item in aggregates if item["recipe_id"] == representative),
+                None,
+            )
+            if baseline is not None:
+                baseline_status = "available" if baseline["feasible"] else "failed"
+
+        if not self._batches:
+            evaluation_status = "not_started"
+        elif self._stages and self._stages[-1].complete:
+            evaluation_status = "complete"
+        elif aggregates:
+            evaluation_status = "partial"
+        else:
+            evaluation_status = "failed"
+
+        final_evidence = (
+            finalization is not None
+            and finalization.generation_status in ("exhaustive", "strategy_complete")
+            and terminal_fidelity_status == "complete"
+            and evaluation_status == "complete"
+            and baseline_status == "available"
+        )
+        if not final_evidence:
+            decision_status = "incomplete_evidence"
+        elif not feasible:
+            decision_status = "no_feasible_candidate"
+        elif len(self._target_contract.objectives) == 1:
+            decision_status = "selected"
+        else:
+            decision_status = "pareto_only"
+
+        if reason == "poisoned":
+            terminal_state = "poisoned"
+        elif finalization is not None and finalization.generation_status == "provider_failed":
+            terminal_state = "provider_failed"
+        elif reason in ("evaluation_budget_exhausted", "time_budget_exhausted") or (
+            finalization is not None and finalization.generation_status == "budget_limited"
+        ):
+            terminal_state = "budget_exhausted"
+        elif finalization is not None and finalization.reason == "no_new_physical_identity":
+            terminal_state = "no_new_physical_identity"
+        elif finalization is not None and not feasible:
+            terminal_state = "all_failed"
+        elif final_evidence:
+            terminal_state = "complete"
+        elif finalization is not None:
+            terminal_state = "budget_exhausted"
+        else:
+            terminal_state = "active"
+        return ForgeOpaqueSearchStatusV2(
+            terminal_state=terminal_state,
+            generation_status=generation_status,
+            evaluation_status=evaluation_status,
+            terminal_fidelity_status=terminal_fidelity_status,
+            baseline_status=baseline_status,
+            decision_status=decision_status,
+            reason=reason,
+        )
+
     def _restore(
         self,
         value: ForgeOpaqueSearchCheckpointV2 | Mapping[str, object],
@@ -537,6 +829,10 @@ class ForgeOpaqueSearchSessionV2:
         )
         if checkpoint.session_fingerprint != self._session_fingerprint:
             raise ValueError("checkpoint belongs to a different search session contract")
+        if checkpoint.dynamic_domain != self._dynamic_domain:
+            raise ValueError("checkpoint dynamic recipe domain mismatch")
+        if checkpoint.evaluation_context != self._evaluation_context:
+            raise ValueError("checkpoint evaluation context mismatch")
         if checkpoint.baseline_recipe_id != self._baseline_recipe_id:
             raise ValueError("checkpoint baseline recipe mismatch")
         if checkpoint.deterministic_seed != self._seed:
@@ -555,14 +851,15 @@ class ForgeOpaqueSearchSessionV2:
         self._stages = [item.model_copy(deep=True) for item in checkpoint.stages]
         self._evaluation_count = checkpoint.evaluation_count
         self._elapsed_seconds = checkpoint.elapsed_seconds
-        if self._batches:
-            first = self._batches[0]
-            self._provider_identity = (
-                first.provider_namespace,
-                first.domain_version,
-                first.provider_semantic_fingerprint,
-            )
-        self._termination_reason = "resumed"
+        self._finalization = (
+            None
+            if checkpoint.finalization is None
+            else checkpoint.finalization.model_copy(deep=True)
+        )
+        self._termination_reason = checkpoint.status.reason
+        self._status = self._derive_status(self._termination_reason)
+        if self._status != checkpoint.status:
+            raise ValueError("checkpoint structured search status is inconsistent")
 
     def _elapsed(self) -> float:
         if self._active_started_at is None:
@@ -572,6 +869,10 @@ class ForgeOpaqueSearchSessionV2:
     def _validate_batch(self, batch: OpaqueRecipeBatchV2) -> None:
         if not isinstance(batch, OpaqueRecipeBatchV2):
             raise TypeError("batch must be an OpaqueRecipeBatchV2")
+        if self._finalization is not None:
+            raise RuntimeError("cannot submit a batch after search finalization")
+        if self._termination_reason == "poisoned":
+            raise RuntimeError("cannot continue a poisoned opaque search session")
         for field in (
             "compileiq_capability_id",
             "compileiq_core_commit",
@@ -584,18 +885,24 @@ class ForgeOpaqueSearchSessionV2:
             }[field]
             if getattr(batch, field) != self._capability[capability_field]:
                 raise ValueError("opaque batch is not bound to this exact CompileIQ build")
+        if (
+            batch.provider_namespace != self._dynamic_domain.provider_namespace
+            or batch.domain_version != self._dynamic_domain.domain_version
+            or batch.provider_semantic_fingerprint != self._dynamic_domain.generation_domain_id
+        ):
+            raise ValueError("opaque batch drifted from the dynamic recipe domain")
         if self._baseline_recipe_id not in batch.recipe_ids:
             raise ValueError("every opaque search batch must retain the baseline recipe")
 
-        provider_identity = (
-            batch.provider_namespace,
-            batch.domain_version,
-            batch.provider_semantic_fingerprint,
-        )
-        if self._provider_identity is None:
-            self._provider_identity = provider_identity
-        elif provider_identity != self._provider_identity:
-            raise ValueError("opaque batch provider identity drifted within one session")
+        prior_plans = {
+            recipe.recipe_id: recipe.planned_physical_id
+            for previous_batch in self._batches
+            for recipe in previous_batch.recipes
+        }
+        for recipe in batch.recipes:
+            previous_plan = prior_plans.get(recipe.recipe_id)
+            if previous_plan is not None and previous_plan != recipe.planned_physical_id:
+                raise ValueError("opaque recipe planned physical identity drifted across stages")
 
         if not self._batches:
             if batch.stage_index != 0 or batch.parent_batch_fingerprint is not None:
@@ -604,6 +911,8 @@ class ForgeOpaqueSearchSessionV2:
         previous = self._batches[-1]
         if batch.batch_fingerprint == previous.batch_fingerprint:
             return
+        if previous.fidelity.terminal:
+            raise ValueError("a terminal-fidelity batch must be the final search stage")
         if batch.stage_index != previous.stage_index + 1:
             raise ValueError("opaque batch stage indices must be contiguous")
         if batch.parent_batch_fingerprint != previous.batch_fingerprint:
@@ -616,8 +925,67 @@ class ForgeOpaqueSearchSessionV2:
         if batch.fidelity.ordinal < previous.fidelity.ordinal:
             raise ValueError("opaque batch fidelity must not move backwards")
 
+    def _physical_duplicates(
+        self,
+        batch: OpaqueRecipeBatchV2,
+        *,
+        kind: Literal["planned", "materialized"],
+    ) -> tuple[ForgeOpaquePhysicalDuplicateV2, ...]:
+        groups: dict[str, list[str]] = {}
+        if kind == "planned":
+            for recipe in batch.recipes:
+                groups.setdefault(recipe.planned_physical_id, []).append(recipe.recipe_id)
+        else:
+            for recipe_id in batch.recipe_ids:
+                aggregate = self._aggregate_recipe(batch, recipe_id)
+                if aggregate is None or not aggregate["feasible"]:
+                    continue
+                physical_id = aggregate.get("materialized_physical_id")
+                if physical_id is not None:
+                    groups.setdefault(physical_id, []).append(recipe_id)
+        duplicates = []
+        for physical_id, recipe_ids in groups.items():
+            ordered = sorted(recipe_ids, key=lambda item: item.encode("utf-8"))
+            representative = ordered[0]
+            duplicates.extend(
+                ForgeOpaquePhysicalDuplicateV2(
+                    kind=kind,
+                    physical_id=physical_id,
+                    alias_recipe_id=alias,
+                    representative_recipe_id=representative,
+                )
+                for alias in ordered[1:]
+            )
+        return tuple(
+            sorted(
+                duplicates,
+                key=lambda item: (
+                    item.kind,
+                    item.physical_id.encode("utf-8"),
+                    item.alias_recipe_id.encode("utf-8"),
+                ),
+            )
+        )
+
+    def _planned_representatives(self, batch: OpaqueRecipeBatchV2) -> tuple[str, ...]:
+        aliases = {
+            item.alias_recipe_id: item.representative_recipe_id
+            for item in self._physical_duplicates(batch, kind="planned")
+        }
+        return tuple(recipe_id for recipe_id in batch.recipe_ids if recipe_id not in aliases)
+
     def _candidate_order(self, batch: OpaqueRecipeBatchV2) -> tuple[str, ...]:
-        others = [item for item in batch.recipe_ids if item != self._baseline_recipe_id]
+        planned_aliases = {
+            item.alias_recipe_id: item.representative_recipe_id
+            for item in self._physical_duplicates(batch, kind="planned")
+        }
+        baseline_representative = planned_aliases.get(
+            self._baseline_recipe_id,
+            self._baseline_recipe_id,
+        )
+        others = [
+            item for item in self._planned_representatives(batch) if item != baseline_representative
+        ]
         others.sort(
             key=lambda recipe_id: (
                 hashlib.sha256(
@@ -626,7 +994,7 @@ class ForgeOpaqueSearchSessionV2:
                 recipe_id,
             )
         )
-        return (self._baseline_recipe_id, *others)
+        return (baseline_representative, *others)
 
     def _measurement_key(
         self,
@@ -717,6 +1085,16 @@ class ForgeOpaqueSearchSessionV2:
                 message="objective must return TrialOutcomeV2",
             )
         if outcome.failure is None:
+            expected_plan = batch.recipe(request.recipe_id).planned_physical_id
+            if outcome.planned_physical_id != expected_plan:
+                return self._failure_outcome(
+                    batch=batch,
+                    recipe_id=request.recipe_id,
+                    category="protocol",
+                    code="planned_physical_identity_mismatch",
+                    message="trial outcome changed the batch planned physical identity",
+                    cleanup=outcome.cleanup,
+                )
             expected = set(self._target_contract.metric_names)
             if set(outcome.metrics) != expected:
                 return self._failure_outcome(
@@ -732,9 +1110,7 @@ class ForgeOpaqueSearchSessionV2:
             prior = [
                 item.outcome
                 for item in self._records.values()
-                if item.request.recipe_id == request.recipe_id
-                and item.request.fidelity_fingerprint == request.fidelity_fingerprint
-                and item.outcome.failure is None
+                if item.request.recipe_id == request.recipe_id and item.outcome.failure is None
             ]
             if prior and any(
                 item.planned_physical_id != outcome.planned_physical_id
@@ -831,6 +1207,8 @@ class ForgeOpaqueSearchSessionV2:
             memory_budget_exceeded=memory_exceeded,
         )
         self._evaluation_count += 1
+        if outcome.cleanup.status == "incomplete":
+            self._termination_reason = "poisoned"
 
     def _records_for(
         self,
@@ -1036,20 +1414,31 @@ class ForgeOpaqueSearchSessionV2:
                         self._termination_reason = "time_budget_exhausted"
                         break
                     self._run_request(batch, request)
+                    if self._termination_reason == "poisoned":
+                        break
                 if self._termination_reason != "batch_complete":
                     break
         finally:
             self._elapsed_seconds = self._elapsed()
             self._active_started_at = None
 
-        aggregates = [
+        measured_aggregates = [
             aggregate
             for recipe_id in batch.recipe_ids
             if (aggregate := self._aggregate_recipe(batch, recipe_id)) is not None
         ]
-        evaluated_ids = tuple(item["recipe_id"] for item in aggregates)
-        complete = all(item["complete"] for item in aggregates) and len(evaluated_ids) == len(
-            batch.recipe_ids
+        planned_duplicates = self._physical_duplicates(batch, kind="planned")
+        materialized_duplicates = self._physical_duplicates(batch, kind="materialized")
+        materialized_aliases = {item.alias_recipe_id for item in materialized_duplicates}
+        aggregates = [
+            item for item in measured_aggregates if item["recipe_id"] not in materialized_aliases
+        ]
+        evaluated_ids = tuple(item["recipe_id"] for item in measured_aggregates)
+        required_ids = set(self._planned_representatives(batch))
+        complete = (
+            self._termination_reason != "poisoned"
+            and all(item["complete"] for item in measured_aggregates)
+            and {item["recipe_id"] for item in measured_aggregates} == required_ids
         )
         stage = ForgeOpaqueStageResultV2(
             batch_fingerprint=batch.batch_fingerprint,
@@ -1057,6 +1446,7 @@ class ForgeOpaqueSearchSessionV2:
             fidelity_fingerprint=batch.fidelity.fidelity_fingerprint,
             evaluated_recipe_ids=evaluated_ids,
             survivor_recipe_ids=self._survivors(batch, aggregates),
+            physical_duplicates=planned_duplicates + materialized_duplicates,
             complete=complete,
         )
         self._stages = [
@@ -1064,19 +1454,53 @@ class ForgeOpaqueSearchSessionV2:
         ]
         self._stages.append(stage)
         self._stages.sort(key=lambda item: item.stage_index)
+        self._status = self._derive_status(self._termination_reason)
         return ForgeOpaqueSearchResultV2(self)
 
     def _current_aggregates(self) -> list[dict[str, object]]:
         if not self._batches:
             return []
         batch = self._batches[-1]
-        return [
+        aggregates = [
             aggregate
             for recipe_id in batch.recipe_ids
             if (aggregate := self._aggregate_recipe(batch, recipe_id)) is not None
         ]
+        aliases = {
+            item.alias_recipe_id for item in self._physical_duplicates(batch, kind="materialized")
+        }
+        return [item for item in aggregates if item["recipe_id"] not in aliases]
 
     def result(self) -> ForgeOpaqueSearchResultV2:
+        return ForgeOpaqueSearchResultV2(self)
+
+    def finalize(
+        self,
+        finalization: ForgeOpaqueSearchFinalizationV1,
+    ) -> ForgeOpaqueSearchResultV2:
+        """Freeze provider-owned generation status against measured stage facts."""
+
+        if not isinstance(finalization, ForgeOpaqueSearchFinalizationV1):
+            raise TypeError("finalization must be a ForgeOpaqueSearchFinalizationV1")
+        if self._finalization is not None:
+            if self._finalization != finalization:
+                raise ValueError("opaque search was already finalized differently")
+            return ForgeOpaqueSearchResultV2(self)
+        terminal_stage = self._terminal_stage()
+        observed_status = (
+            "not_reached"
+            if terminal_stage is None
+            else ("complete" if terminal_stage.complete else "partial")
+        )
+        if finalization.terminal_fidelity_status != observed_status:
+            raise ValueError(
+                "terminal fidelity finalization contradicts measured batch facts: "
+                f"declared={finalization.terminal_fidelity_status!r}, "
+                f"observed={observed_status!r}"
+            )
+        self._finalization = finalization.model_copy(deep=True)
+        self._termination_reason = finalization.reason
+        self._status = self._derive_status(self._termination_reason)
         return ForgeOpaqueSearchResultV2(self)
 
     def checkpoint(self) -> ForgeOpaqueSearchCheckpointV2:
@@ -1084,6 +1508,8 @@ class ForgeOpaqueSearchSessionV2:
             raise RuntimeError("cannot checkpoint during an active objective call")
         return ForgeOpaqueSearchCheckpointV2(
             session_fingerprint=self._session_fingerprint,
+            dynamic_domain=self._dynamic_domain,
+            evaluation_context=self._evaluation_context,
             baseline_recipe_id=self._baseline_recipe_id,
             deterministic_seed=self._seed,
             elapsed_seconds=self._elapsed_seconds,
@@ -1096,19 +1522,29 @@ class ForgeOpaqueSearchSessionV2:
                 )
             ),
             stages=tuple(sorted(self._stages, key=lambda item: item.stage_index)),
+            finalization=self._finalization,
+            status=self._status,
         )
 
 
 __all__ = [
+    "FORGE_OPAQUE_EVALUATION_CONTEXT_SCHEMA",
+    "FORGE_OPAQUE_FINALIZATION_SCHEMA",
+    "FORGE_OPAQUE_PHYSICAL_DUPLICATE_SCHEMA",
     "FORGE_OPAQUE_SEARCH_BUDGET_SCHEMA",
     "FORGE_OPAQUE_SEARCH_CHECKPOINT_SCHEMA",
     "FORGE_OPAQUE_STAGE_RESULT_SCHEMA",
+    "FORGE_OPAQUE_SEARCH_STATUS_SCHEMA",
     "FORGE_OPAQUE_TRIAL_OUTCOME_SCHEMA",
     "FORGE_OPAQUE_TRIAL_REQUEST_SCHEMA",
+    "ForgeOpaqueEvaluationContextV1",
+    "ForgeOpaquePhysicalDuplicateV2",
     "ForgeOpaqueSearchBudgetV2",
     "ForgeOpaqueSearchCheckpointV2",
+    "ForgeOpaqueSearchFinalizationV1",
     "ForgeOpaqueSearchResultV2",
     "ForgeOpaqueSearchSessionV2",
+    "ForgeOpaqueSearchStatusV2",
     "ForgeOpaqueStageResultV2",
     "TrialCleanupV2",
     "TrialFailureV2",

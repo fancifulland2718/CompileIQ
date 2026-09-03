@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from compileiq.core.verify_core import MANIFEST_PATH, load_manifest, validate_core_lock
 from compileiq.recipes import (
+    OPAQUE_DYNAMIC_RECIPE_DOMAIN_SCHEMA,
     OPAQUE_RECIPE_BATCH_SCHEMA,
     OPAQUE_RECIPE_SELECTION_AUDIT_SCHEMA,
     OpaqueRecipeDomainV1,
@@ -27,8 +28,8 @@ from compileiq.utils.validation import Score
 FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA = "compileiq.taichi-forge-recipe-search-capability.v2"
 FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA = "compileiq.taichi-forge-opaque-target-contract.v1"
 FORGE_RECIPE_SEARCH_FORK_BUILD_ID = "compileiq-taichi-forge-complete-recipes.v2"
-FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev4+taichiforge.recipe2"
-FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 4
+FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev5+taichiforge.recipe2"
+FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 5
 FORGE_RECIPE_SEARCH_CAPABILITY_ID_PREFIX = "ciq-forge-cap-v2:"
 
 
@@ -152,16 +153,19 @@ class ForgeRecipeSearchCapabilityV2(BaseModel):
     schema_id: Literal["compileiq.taichi-forge-recipe-search-capability.v2"] = Field(
         default=SCHEMA, alias="schema"
     )
-    protocol_revision: Literal[4] = FORGE_RECIPE_SEARCH_PROTOCOL_REVISION
+    protocol_revision: Literal[5] = FORGE_RECIPE_SEARCH_PROTOCOL_REVISION
     fork_build_id: Literal["compileiq-taichi-forge-complete-recipes.v2"] = (
         FORGE_RECIPE_SEARCH_FORK_BUILD_ID
     )
-    package_version: Literal["1.0.0dev4+taichiforge.recipe2"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
+    package_version: Literal["1.0.0dev5+taichiforge.recipe2"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
     opaque_recipe_domain_schema: Literal["compileiq.opaque-recipe-domain.v1"] = (
         OpaqueRecipeDomainV1.SCHEMA
     )
     opaque_recipe_batch_schema: Literal["compileiq.opaque-recipe-batch.v2"] = (
         OPAQUE_RECIPE_BATCH_SCHEMA
+    )
+    opaque_dynamic_recipe_domain_schema: Literal["compileiq.opaque-dynamic-recipe-domain.v2"] = (
+        OPAQUE_DYNAMIC_RECIPE_DOMAIN_SCHEMA
     )
     selection_audit_schema: Literal["compileiq.opaque-recipe-selection.v1"] = (
         OPAQUE_RECIPE_SELECTION_AUDIT_SCHEMA
@@ -178,6 +182,15 @@ class ForgeRecipeSearchCapabilityV2(BaseModel):
     search_checkpoint_schema: Literal["compileiq.taichi-forge-search-checkpoint.v2"] = (
         "compileiq.taichi-forge-search-checkpoint.v2"
     )
+    evaluation_context_schema: Literal["compileiq.taichi-forge-evaluation-context.v1"] = (
+        "compileiq.taichi-forge-evaluation-context.v1"
+    )
+    search_finalization_schema: Literal["compileiq.taichi-forge-search-finalization.v1"] = (
+        "compileiq.taichi-forge-search-finalization.v1"
+    )
+    search_status_schema: Literal["compileiq.taichi-forge-search-status.v2"] = (
+        "compileiq.taichi-forge-search-status.v2"
+    )
     max_recipe_ids: int = OpaqueRecipeDomainV1.MAX_RECIPE_IDS
     max_field_utf8_bytes: int = OpaqueRecipeDomainV1.MAX_FIELD_UTF8_BYTES
     max_canonical_bytes: int = OpaqueRecipeDomainV1.MAX_CANONICAL_BYTES
@@ -189,8 +202,8 @@ class ForgeRecipeSearchCapabilityV2(BaseModel):
         "capability_id_core_commit_core_lock"
     )
     objective_worker: Literal["forge_main_thread_serial_v1"] = "forge_main_thread_serial_v1"
-    opaque_recipe_search: Literal["budgeted_staged_pareto_racing_main_thread_v2"] = (
-        "budgeted_staged_pareto_racing_main_thread_v2"
+    opaque_recipe_search: Literal["dynamic_batch_pareto_racing_main_thread_v2"] = (
+        "dynamic_batch_pareto_racing_main_thread_v2"
     )
     opaque_recipe_search_v1: Literal["bounded_exhaustive_main_thread_v1"] = (
         "bounded_exhaustive_main_thread_v1"
@@ -263,11 +276,15 @@ def forge_recipe_search_capability(
         "package_version": FORGE_RECIPE_SEARCH_PACKAGE_VERSION,
         "opaque_recipe_domain_schema": OpaqueRecipeDomainV1.SCHEMA,
         "opaque_recipe_batch_schema": OPAQUE_RECIPE_BATCH_SCHEMA,
+        "opaque_dynamic_recipe_domain_schema": OPAQUE_DYNAMIC_RECIPE_DOMAIN_SCHEMA,
         "selection_audit_schema": OPAQUE_RECIPE_SELECTION_AUDIT_SCHEMA,
         "opaque_target_contract_schema": FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA,
         "opaque_target_selection": ("uncertainty_aware_pareto_layers_no_scalarization_v2"),
         "trial_outcome_schema": "compileiq.taichi-forge-trial-outcome.v2",
         "search_checkpoint_schema": "compileiq.taichi-forge-search-checkpoint.v2",
+        "evaluation_context_schema": "compileiq.taichi-forge-evaluation-context.v1",
+        "search_finalization_schema": "compileiq.taichi-forge-search-finalization.v1",
+        "search_status_schema": "compileiq.taichi-forge-search-status.v2",
         "max_recipe_ids": OpaqueRecipeDomainV1.MAX_RECIPE_IDS,
         "max_field_utf8_bytes": OpaqueRecipeDomainV1.MAX_FIELD_UTF8_BYTES,
         "max_canonical_bytes": OpaqueRecipeDomainV1.MAX_CANONICAL_BYTES,
@@ -277,7 +294,7 @@ def forge_recipe_search_capability(
         ),
         "opaque_domain_binding": "capability_id_core_commit_core_lock",
         "objective_worker": "forge_main_thread_serial_v1",
-        "opaque_recipe_search": "budgeted_staged_pareto_racing_main_thread_v2",
+        "opaque_recipe_search": "dynamic_batch_pareto_racing_main_thread_v2",
         "opaque_recipe_search_v1": "bounded_exhaustive_main_thread_v1",
         "core_manifest_schema_version": schema_version,
         "core_commit": core_commit,
@@ -608,10 +625,14 @@ class ForgeOpaqueRecipeExhaustiveSearchV1:
 
 
 from compileiq.forge_search_v2 import (  # noqa: E402
+    ForgeOpaqueEvaluationContextV1,
+    ForgeOpaquePhysicalDuplicateV2,
     ForgeOpaqueSearchBudgetV2,
     ForgeOpaqueSearchCheckpointV2,
+    ForgeOpaqueSearchFinalizationV1,
     ForgeOpaqueSearchResultV2,
     ForgeOpaqueSearchSessionV2,
+    ForgeOpaqueSearchStatusV2,
     ForgeOpaqueStageResultV2,
     TrialCleanupV2,
     TrialFailureV2,
@@ -633,14 +654,18 @@ __all__ = [
     "FORGE_RECIPE_SEARCH_PACKAGE_VERSION",
     "FORGE_RECIPE_SEARCH_PROTOCOL_REVISION",
     "ForgeMainThreadWorker",
+    "ForgeOpaqueEvaluationContextV1",
+    "ForgeOpaquePhysicalDuplicateV2",
     "ForgeOpaqueConstraintV1",
     "ForgeOpaqueObjectiveV1",
     "ForgeOpaqueRecipeExhaustiveResultV1",
     "ForgeOpaqueRecipeExhaustiveSearchV1",
     "ForgeOpaqueSearchBudgetV2",
     "ForgeOpaqueSearchCheckpointV2",
+    "ForgeOpaqueSearchFinalizationV1",
     "ForgeOpaqueSearchResultV2",
     "ForgeOpaqueSearchSessionV2",
+    "ForgeOpaqueSearchStatusV2",
     "ForgeOpaqueStageResultV2",
     "ForgeOpaqueTargetContractV1",
     "ForgeRecipeSearchCapabilityV1",
