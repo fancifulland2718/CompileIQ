@@ -28,8 +28,8 @@ from compileiq.utils.validation import Score
 FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA = "compileiq.taichi-forge-recipe-search-capability.v2"
 FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA = "compileiq.taichi-forge-opaque-target-contract.v1"
 FORGE_RECIPE_SEARCH_FORK_BUILD_ID = "compileiq-taichi-forge-complete-recipes.v2"
-FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev5+taichiforge.recipe2"
-FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 5
+FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev6+taichiforge.report1"
+FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 6
 FORGE_RECIPE_SEARCH_CAPABILITY_ID_PREFIX = "ciq-forge-cap-v2:"
 
 
@@ -153,11 +153,13 @@ class ForgeRecipeSearchCapabilityV2(BaseModel):
     schema_id: Literal["compileiq.taichi-forge-recipe-search-capability.v2"] = Field(
         default=SCHEMA, alias="schema"
     )
-    protocol_revision: Literal[5] = FORGE_RECIPE_SEARCH_PROTOCOL_REVISION
+    protocol_revision: Literal[6] = FORGE_RECIPE_SEARCH_PROTOCOL_REVISION
     fork_build_id: Literal["compileiq-taichi-forge-complete-recipes.v2"] = (
         FORGE_RECIPE_SEARCH_FORK_BUILD_ID
     )
-    package_version: Literal["1.0.0dev5+taichiforge.recipe2"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
+    package_version: Literal["1.0.0dev6+taichiforge.report1"] = (
+        FORGE_RECIPE_SEARCH_PACKAGE_VERSION
+    )
     opaque_recipe_domain_schema: Literal["compileiq.opaque-recipe-domain.v1"] = (
         OpaqueRecipeDomainV1.SCHEMA
     )
@@ -191,6 +193,12 @@ class ForgeRecipeSearchCapabilityV2(BaseModel):
     search_status_schema: Literal["compileiq.taichi-forge-search-status.v2"] = (
         "compileiq.taichi-forge-search-status.v2"
     )
+    optimization_report_schema: Literal["compileiq.opaque-optimization-report.v1"] = (
+        "compileiq.opaque-optimization-report.v1"
+    )
+    optimization_report_renderer: Literal[
+        "json_fact_source_markdown_projection_v1"
+    ] = "json_fact_source_markdown_projection_v1"
     max_recipe_ids: int = OpaqueRecipeDomainV1.MAX_RECIPE_IDS
     max_field_utf8_bytes: int = OpaqueRecipeDomainV1.MAX_FIELD_UTF8_BYTES
     max_canonical_bytes: int = OpaqueRecipeDomainV1.MAX_CANONICAL_BYTES
@@ -285,6 +293,8 @@ def forge_recipe_search_capability(
         "evaluation_context_schema": "compileiq.taichi-forge-evaluation-context.v1",
         "search_finalization_schema": "compileiq.taichi-forge-search-finalization.v1",
         "search_status_schema": "compileiq.taichi-forge-search-status.v2",
+        "optimization_report_schema": "compileiq.opaque-optimization-report.v1",
+        "optimization_report_renderer": "json_fact_source_markdown_projection_v1",
         "max_recipe_ids": OpaqueRecipeDomainV1.MAX_RECIPE_IDS,
         "max_field_utf8_bytes": OpaqueRecipeDomainV1.MAX_FIELD_UTF8_BYTES,
         "max_canonical_bytes": OpaqueRecipeDomainV1.MAX_CANONICAL_BYTES,
@@ -640,6 +650,13 @@ from compileiq.forge_search_v2 import (  # noqa: E402
     TrialRecordV2,
     TrialRequestV2,
 )
+from compileiq.forge_report import (  # noqa: E402
+    OPAQUE_OPTIMIZATION_REPORT_JSON_SCHEMA_ID,
+    OPAQUE_OPTIMIZATION_REPORT_RENDERER,
+    OPAQUE_OPTIMIZATION_REPORT_SCHEMA,
+    OpaqueOptimizationReportV1,
+    opaque_optimization_report_json_schema,
+)
 
 
 # Source-compatible name for V1 users; the capability envelope now advertises
@@ -653,6 +670,9 @@ __all__ = [
     "FORGE_RECIPE_SEARCH_FORK_BUILD_ID",
     "FORGE_RECIPE_SEARCH_PACKAGE_VERSION",
     "FORGE_RECIPE_SEARCH_PROTOCOL_REVISION",
+    "OPAQUE_OPTIMIZATION_REPORT_JSON_SCHEMA_ID",
+    "OPAQUE_OPTIMIZATION_REPORT_RENDERER",
+    "OPAQUE_OPTIMIZATION_REPORT_SCHEMA",
     "ForgeMainThreadWorker",
     "ForgeOpaqueEvaluationContextV1",
     "ForgeOpaquePhysicalDuplicateV2",
@@ -676,4 +696,6 @@ __all__ = [
     "TrialRecordV2",
     "TrialRequestV2",
     "forge_recipe_search_capability",
+    "OpaqueOptimizationReportV1",
+    "opaque_optimization_report_json_schema",
 ]

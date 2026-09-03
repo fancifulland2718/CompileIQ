@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "compileiq"
-version = "1.0.0dev5+taichiforge.recipe2"
+version = "1.0.0dev6+taichiforge.report1"
 description = "NVIDIA compiler control optimization engine."
 authors = ["NVIDIA Corporation"]
 maintainers = ["CompileIQ Team <compileiq@nvidia.com>"]
@@ -10,6 +10,7 @@ documentation = "https://github.com/NVIDIA/CompileIQ/blob/main/README.md"
 packages = [{ include = "compileiq", format = "wheel" }]
 include = [
     { path = "compileiq/core/executable/**/*", format = "wheel" },
+    { path = "schemas/opaque-optimization-report-v1.schema.json", format = "wheel" },
 ]
 
 [tool.poetry.dependencies]
