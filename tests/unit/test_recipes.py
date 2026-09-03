@@ -110,7 +110,7 @@ def test_opaque_recipe_domain_v1_has_stable_golden_fingerprint():
 
     assert domain.recipe_ids == ("recipe:alpha", "recipe:zeta")
     assert domain.domain_fingerprint == (
-        "ciq-domain-v1:0d6a802a3a39fe2e3d01562f1c29c588a83b87aae1ac6439e49e0fdd4080c80a"
+        "ciq-domain-v1:f9bf45b9c26a1f465e632c6c147c08cf7da93ffca160d64b76c7655858b5adfd"
     )
     assert domain.model_dump(by_alias=True)["schema"] == domain.SCHEMA
 

@@ -30,7 +30,7 @@ def test_forge_recipe_capability_is_versioned_and_core_locked():
     payload = capability.as_dict()
 
     assert payload["schema"] == "compileiq.taichi-forge-recipe-search-capability.v2"
-    assert payload["protocol_revision"] == 5
+    assert payload["protocol_revision"] == 6
     assert payload["fork_build_id"] == FORGE_RECIPE_SEARCH_FORK_BUILD_ID
     assert payload["package_version"] == FORGE_RECIPE_SEARCH_PACKAGE_VERSION
     assert payload["opaque_recipe_domain_schema"] == ("compileiq.opaque-recipe-domain.v1")
@@ -62,7 +62,13 @@ def test_forge_recipe_capability_is_versioned_and_core_locked():
     assert payload["opaque_recipe_search"] == ("dynamic_batch_pareto_racing_main_thread_v2")
     assert payload["opaque_recipe_search_v1"] == "bounded_exhaustive_main_thread_v1"
     assert payload["fork_build_id"] == ("compileiq-taichi-forge-complete-recipes.v2")
-    assert payload["package_version"] == ("1.0.0dev5+taichiforge.recipe2")
+    assert payload["package_version"] == ("1.0.0dev6+taichiforge.report1")
+    assert payload["optimization_report_schema"] == (
+        "compileiq.opaque-optimization-report.v1"
+    )
+    assert payload["optimization_report_renderer"] == (
+        "json_fact_source_markdown_projection_v1"
+    )
     assert payload["core_lock"].startswith("sha256:")
     assert payload["capability_id"].startswith("ciq-forge-cap-v2:")
     assert ForgeRecipeSearchCapabilityV1(**payload) == capability
