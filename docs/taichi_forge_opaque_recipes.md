@@ -210,8 +210,15 @@ provider catalog, then resolves the stable recipe ID.
 `forge_recipe_search_capability()` binds this protocol to the modified package,
 the bundled core commit and manifest lock, and hashes of packaged core files.
 Core binary or manifest overrides are rejected for opaque recipe search.
-Taichi Forge additionally locks the fork Git commit and the complete installed
-Python source manifest; a package version alone is not sufficient provenance.
+Taichi Forge accepts a wheel by its V2 protocol epoch, required schemas, API
+surface, and self-consistent capability identity. It computes the complete
+installed Python source identity at runtime and binds that identity to a search
+session and its checkpoints, so resuming with different code fails explicitly.
+The fork Git commit, platform wheel SHA-256, and package version describe a
+qualified snapshot; they are recorded for audit but are not installation
+allowlists. A later compatible fork build therefore does not require a Taichi
+source change merely because its commit, wheel filename, or source identity
+changed.
 
 The fork supports Python 3.10 through 3.14. CI builds one platform wheel per
 Linux x86_64, Linux aarch64, and Windows amd64 target, then installs and runs the
@@ -235,4 +242,5 @@ python .github/scripts/smoke_test_compileiq_wheel.py
 Run the installed-wheel smoke outside the repository checkout (as CI does) so
 the import cannot fall back to local sources. Record the fork commit, platform
 wheel SHA-256, capability ID, bundled-core lock, and Python-source lock with
-any qualification artifact.
+any qualification artifact. These values reproduce that qualification result;
+protocol compatibility remains the runtime acceptance contract.
