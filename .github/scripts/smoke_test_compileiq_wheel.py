@@ -5,8 +5,10 @@ import compileiq.ciq as ciq_module
 import compileiq.search_spaces.base as ss
 from compileiq.ciq import Search
 from compileiq.forge_support import (
+    ForgeOpaqueEvaluationContextV1,
     ForgeOpaqueObjectiveV1,
     ForgeOpaqueSearchBudgetV2,
+    ForgeOpaqueSearchFinalizationV1,
     ForgeOpaqueSearchSessionV2,
     ForgeOpaqueTargetContractV1,
     TrialCleanupV2,
@@ -14,6 +16,7 @@ from compileiq.forge_support import (
     forge_recipe_search_capability,
 )
 from compileiq.recipes import (
+    OpaqueDynamicRecipeDomainV2,
     OpaqueRecipeBatchV2,
     OpaqueRecipeFidelityV2,
     OpaqueRecipeLineageV2,
@@ -52,11 +55,36 @@ def assert_forge_v2_checkpoint_resume():
             name="package",
             ordinal=0,
             repeat_count=1,
+            terminal=True,
         ),
         recipes=(
-            OpaqueRecipeLineageV2(recipe_id="baseline"),
-            OpaqueRecipeLineageV2(recipe_id="candidate"),
+            OpaqueRecipeLineageV2(
+                recipe_id="baseline",
+                planned_physical_id="planned:baseline",
+            ),
+            OpaqueRecipeLineageV2(
+                recipe_id="candidate",
+                planned_physical_id="planned:candidate",
+            ),
         ),
+    )
+    domain = OpaqueDynamicRecipeDomainV2(
+        provider_namespace="wheel.smoke",
+        domain_version="complete-recipes.v2",
+        generation_domain_id="wheel-smoke-semantics-v2",
+        provider_registry_id="wheel-smoke-provider-registry-v2",
+        assembly_protocols=("provider_owned_whole_graph.v1",),
+        recipe_schema="wheel-smoke-complete-recipe.v2",
+        search_strategy_id="wheel-smoke-exact.v2",
+        compileiq_capability_id=capability["capability_id"],
+        compileiq_core_commit=capability["core_commit"],
+        compileiq_core_lock=capability["core_lock"],
+    )
+    evaluation_context = ForgeOpaqueEvaluationContextV1(
+        reuse_scope="portable",
+        workload_context_id="wheel-smoke-workload-v1",
+        evaluation_contract_id="wheel-smoke-evaluator-v1",
+        backend_environment_id="wheel-smoke-environment-v1",
     )
     target = ForgeOpaqueTargetContractV1(
         objectives=(ForgeOpaqueObjectiveV1(name="score", direction="min"),)
@@ -80,6 +108,8 @@ def assert_forge_v2_checkpoint_resume():
 
     partial_session = ForgeOpaqueSearchSessionV2(
         objective_function=evaluate,
+        dynamic_domain=domain,
+        evaluation_context=evaluation_context,
         baseline_recipe_id="baseline",
         target_contract=target,
         budget=ForgeOpaqueSearchBudgetV2(
@@ -94,6 +124,8 @@ def assert_forge_v2_checkpoint_resume():
 
     resumed_session = ForgeOpaqueSearchSessionV2(
         objective_function=evaluate,
+        dynamic_domain=domain,
+        evaluation_context=evaluation_context,
         baseline_recipe_id="baseline",
         target_contract=target,
         budget=ForgeOpaqueSearchBudgetV2(
@@ -104,8 +136,16 @@ def assert_forge_v2_checkpoint_resume():
         deterministic_seed=17,
         checkpoint=partial.checkpoint(),
     )
-    completed = resumed_session.submit_batch(batch)
-    assert completed.termination_reason == "batch_complete"
+    resumed_session.submit_batch(batch)
+    completed = resumed_session.finalize(
+        ForgeOpaqueSearchFinalizationV1(
+            generation_status="exhaustive",
+            terminal_fidelity_status="complete",
+            reason="wheel_smoke_complete",
+        )
+    )
+    assert completed.termination_reason == "wheel_smoke_complete"
+    assert completed.status.terminal_state == "complete"
     assert completed.get_best_result()["recipe_id"] == "candidate"
     assert len(observed) == len(set(observed)) == 2
 
