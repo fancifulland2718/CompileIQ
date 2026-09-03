@@ -11,9 +11,11 @@ from compileiq.forge_support import (
     ForgeOpaqueSearchFinalizationV1,
     ForgeOpaqueSearchSessionV2,
     ForgeOpaqueTargetContractV1,
+    OpaqueOptimizationReportV1,
     TrialCleanupV2,
     TrialOutcomeV2,
     forge_recipe_search_capability,
+    opaque_optimization_report_json_schema,
 )
 from compileiq.recipes import (
     OpaqueDynamicRecipeDomainV2,
@@ -148,6 +150,25 @@ def assert_forge_v2_checkpoint_resume():
     assert completed.status.terminal_state == "complete"
     assert completed.get_best_result()["recipe_id"] == "candidate"
     assert len(observed) == len(set(observed)) == 2
+
+    full_report = completed.report(detail="full")
+    summary_report = full_report.summary()
+    assert full_report.schema_id == "compileiq.opaque-optimization-report.v1"
+    assert full_report.report_id == summary_report.report_id
+    assert full_report.checkpoint.embedded is True
+    assert len(full_report.trials) == 2
+    assert summary_report.checkpoint.embedded is False
+    assert summary_report.trials == ()
+    assert OpaqueOptimizationReportV1.from_json(full_report.to_json()) == full_report
+    assert OpaqueOptimizationReportV1.from_dict(summary_report.to_dict()) == (
+        summary_report
+    )
+    assert "candidate" in summary_report.to_markdown()
+    schema = opaque_optimization_report_json_schema()
+    assert schema["$id"].endswith("opaque-optimization-report-v1.schema.json")
+    assert schema["properties"]["schema"]["const"] == (
+        "compileiq.opaque-optimization-report.v1"
+    )
 
 
 def main():
