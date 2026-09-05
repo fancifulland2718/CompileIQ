@@ -299,7 +299,11 @@ jobs:
           ]
 
           ref = os.environ["GITHUB_REF"]
-          full_matrix = ref == "refs/heads/main" or ref.startswith("refs/tags/v")
+          full_matrix = (
+              ref == "refs/heads/main"
+              or ref.startswith("refs/tags/v")
+              or os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch"
+          )
           platforms = release_platforms if full_matrix else [linux_x86]
 
           print("Selected smoke test wheel platforms:")
@@ -351,11 +355,22 @@ jobs:
             --platform "${{ matrix.platform_dir }}"
           python -m compileiq.core.verify_core --allow-missing-platforms
       - run: python -m pip install poetry wheel
-      - name: Set version from tag
+      - name: Check release tag matches package metadata
         if: |
           startsWith(github.ref, 'refs/tags/v')
         shell: bash
-        run: poetry version "${GITHUB_REF#refs/tags/v}"
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from packaging.version import Version
+
+          with open("pyproject.toml", "rb") as source:
+              version = tomllib.load(source)["tool"]["poetry"]["version"]
+          tag_version = os.environ["GITHUB_REF"].removeprefix("refs/tags/v")
+          if Version(tag_version) != Version(version):
+              raise SystemExit("Release tag must match the reviewed package version")
+          PY
       - run: poetry build -f wheel
       - name: Retag wheel for platform
         shell: bash
@@ -363,11 +378,13 @@ jobs:
       - name: Install built wheel
         shell: bash
         run: python -m pip install --force-reinstall dist/*.whl
-      - name: Smoke installed wheel
+      - name: Test installed Forge contracts on Python 3.12
         shell: bash
         run: |
+          python -m pip install pytest tomli
           cd "$RUNNER_TEMP"
-          python "$GITHUB_WORKSPACE/.github/scripts/smoke_test_compileiq_wheel.py"
+          python "$GITHUB_WORKSPACE/.github/scripts/test_installed_forge_wheel.py" \
+            --output-dir "$RUNNER_TEMP/forge-wheel-py312"
       - name: Smoke encrypted search space through installed wheel
         shell: bash
         run: |
@@ -393,9 +410,34 @@ jobs:
       - name: Consume the same wheel on Python 3.10
         shell: bash
         run: |
-          python -m pip install --force-reinstall dist/*.whl
+          python -m pip install --force-reinstall dist/*.whl pytest tomli
           cd "$RUNNER_TEMP"
-          python "$GITHUB_WORKSPACE/.github/scripts/smoke_test_compileiq_wheel.py"
+          python "$GITHUB_WORKSPACE/.github/scripts/test_installed_forge_wheel.py" \
+            --output-dir "$RUNNER_TEMP/forge-wheel-py310"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+          cache-dependency-path: 'poetry.lock'
+      - name: Consume the same wheel on Python 3.11
+        shell: bash
+        run: |
+          python -m pip install --force-reinstall dist/*.whl pytest tomli
+          cd "$RUNNER_TEMP"
+          python "$GITHUB_WORKSPACE/.github/scripts/test_installed_forge_wheel.py" \
+            --output-dir "$RUNNER_TEMP/forge-wheel-py311"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: 'pip'
+          cache-dependency-path: 'poetry.lock'
+      - name: Consume the same wheel on Python 3.13
+        shell: bash
+        run: |
+          python -m pip install --force-reinstall dist/*.whl pytest tomli
+          cd "$RUNNER_TEMP"
+          python "$GITHUB_WORKSPACE/.github/scripts/test_installed_forge_wheel.py" \
+            --output-dir "$RUNNER_TEMP/forge-wheel-py313"
       - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
@@ -404,9 +446,19 @@ jobs:
       - name: Consume the same wheel on Python 3.14
         shell: bash
         run: |
-          python -m pip install --force-reinstall dist/*.whl
+          python -m pip install --force-reinstall dist/*.whl pytest tomli
           cd "$RUNNER_TEMP"
-          python "$GITHUB_WORKSPACE/.github/scripts/smoke_test_compileiq_wheel.py"
+          python "$GITHUB_WORKSPACE/.github/scripts/test_installed_forge_wheel.py" \
+            --output-dir "$RUNNER_TEMP/forge-wheel-py314"
+      - name: Upload installed contract evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: forge-wheel-contracts-${{ matrix.wheel_platform }}
+          path: |
+            ${{ runner.temp }}/forge-wheel-py*/environment.json
+            ${{ runner.temp }}/forge-wheel-py*/contracts.xml
+          if-no-files-found: warn
       - name: Upload smoke-tested wheel artifact
         uses: actions/upload-artifact@v6
         with:
