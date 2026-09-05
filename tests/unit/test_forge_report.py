@@ -163,6 +163,9 @@ def test_complete_single_objective_report_is_deterministic_and_round_trips():
     assert comparison.directional_improvement == pytest.approx(4.0)
     assert comparison.relative_directional_improvement == pytest.approx(0.4)
     assert "candidate" in full.to_markdown()
+    assert "Max reported materialized bytes" in full.to_markdown()
+    assert "Peak bytes" not in full.to_markdown()
+    assert "materialized_memory_observation_scope" in {item.code for item in full.warnings}
 
 
 def test_multiobjective_report_preserves_pareto_without_scalar_winner():
@@ -273,6 +276,37 @@ def test_partial_failure_and_all_failed_reports_retain_structured_failures():
     assert failed.pareto_front == ()
     assert len(failed.trials) == 2
     assert "No feasible Pareto candidate" in failed.to_markdown()
+    assert failed.status.generation_status == "strategy_complete"
+    assert failed.status.evaluation_status == "complete"
+    warning_codes = {item.code for item in failed.warnings}
+    assert "search_failed" in warning_codes
+    assert "search_not_complete" not in warning_codes
+    assert "Generation state: `strategy_complete`" in failed.to_markdown()
+    assert (
+        "Finished scheduling does not imply an applicable optimization result"
+        in failed.to_markdown()
+    )
+
+
+def test_finished_schedule_with_failed_baseline_does_not_claim_unfinished_search():
+    failure = TrialFailureV2(
+        category="execution", code="baseline_failed", message="baseline failed", retryable=False
+    )
+
+    def objective(request):
+        return _outcome(
+            request, {"latency_ms": 10.0}, failure=failure if request.is_baseline else None
+        )
+
+    session = _session(objective, _contract(("latency_ms", "min")))
+    session.submit_batch(_batch(("baseline", "candidate"), repeats=1))
+    report = _finalize(session).report()
+    assert report.status.baseline_status == "failed"
+    assert report.status.decision_status == "incomplete_evidence"
+    codes = {item.code for item in report.warnings}
+    assert "decision_evidence_incomplete" in codes
+    assert "search_not_complete" not in codes
+    assert report.pareto_front
 
 
 def test_report_identity_rejects_tampering_and_schema_is_checked_in():

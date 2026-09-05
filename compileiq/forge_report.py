@@ -126,7 +126,12 @@ class OpaqueReportBudgetV1(_ReportModel):
     materialized_memory_limit_bytes: int
     evaluation_count: int
     elapsed_seconds: float
-    materialized_memory_peak_bytes: int
+    materialized_memory_peak_bytes: int = Field(
+        description=(
+            "Maximum materialized_memory_bytes reported by trial outcomes, not an "
+            "independently sampled device or process memory high-water mark."
+        )
+    )
 
 
 class OpaqueReportMetricSummaryV1(_ReportModel):
@@ -179,7 +184,12 @@ class OpaqueReportCandidateV1(_ReportModel):
     failures: tuple[OpaqueReportFailureV1, ...]
     planned_physical_ids: tuple[str, ...]
     materialized_physical_ids: tuple[str, ...]
-    materialized_memory_peak_bytes: int
+    materialized_memory_peak_bytes: int = Field(
+        description=(
+            "Maximum materialized_memory_bytes reported for this candidate's trials, "
+            "not an independently sampled device or process memory high-water mark."
+        )
+    )
     observed_provenance: tuple[dict[str, str], ...]
 
     @field_validator("metrics", mode="before")
@@ -655,17 +665,56 @@ def build_opaque_optimization_report(
     warnings = []
     status = checkpoint.status
     overall = _overall_status(status.terminal_state)
-    if overall != "complete":
+    schedule_complete = (
+        status.generation_status in ("exhaustive", "strategy_complete")
+        and status.evaluation_status == "complete"
+        and status.terminal_fidelity_status == "complete"
+    )
+    if not schedule_complete:
         warnings.append(
             OpaqueReportWarningV1(
                 code="search_not_complete",
-                severity="error" if overall == "failed" else "warning",
+                severity="warning",
                 message=(
-                    "The search did not finish with complete terminal evidence; "
-                    "resume or re-evaluate before treating the frontier as final."
+                    "Candidate generation or terminal-fidelity evaluation is unfinished. "
+                    "Inspect the separate status fields before resuming or re-evaluating."
                 ),
             )
         )
+    if overall == "failed":
+        warnings.append(
+            OpaqueReportWarningV1(
+                code="search_failed",
+                severity="error",
+                message=(
+                    f"The search outcome is {status.terminal_state}; review the retained "
+                    "failures and feasibility evidence. Finished scheduling does not "
+                    "imply an applicable optimization result."
+                ),
+            )
+        )
+    elif schedule_complete and status.decision_status == "incomplete_evidence":
+        warnings.append(
+            OpaqueReportWarningV1(
+                code="decision_evidence_incomplete",
+                severity="warning",
+                message=(
+                    "Scheduling finished, but evidence required for a decision is unavailable; "
+                    "inspect baseline, feasibility and failure observations."
+                ),
+            )
+        )
+    warnings.append(
+        OpaqueReportWarningV1(
+            code="materialized_memory_observation_scope",
+            severity="info",
+            message=(
+                "Materialized memory is the maximum value reported by trial outcomes. "
+                "CompileIQ does not sample device/process peak memory or infer allocations "
+                "between caller observation boundaries."
+            ),
+        )
+    )
     if status.terminal_fidelity_status != "complete":
         warnings.append(
             OpaqueReportWarningV1(
@@ -825,6 +874,9 @@ def _render_markdown(report: OpaqueOptimizationReportV1) -> str:
         f"- Status: `{report.status.overall}`",
         f"- Termination: `{report.status.termination_reason}`",
         f"- Decision state: `{report.status.decision_status}`",
+        f"- Generation state: `{report.status.generation_status}`",
+        f"- Evaluation state: `{report.status.evaluation_status}`",
+        f"- Terminal fidelity: `{report.status.terminal_fidelity_status}`",
         "",
         "## Search contract",
         "",
@@ -840,7 +892,7 @@ def _render_markdown(report: OpaqueOptimizationReportV1) -> str:
         "## Budget and observations",
         "",
         "| Evaluations | Limit | Elapsed seconds | Time limit | "
-        "Peak materialized bytes | Memory limit |",
+        "Max reported materialized bytes | Memory limit |",
         "| ---: | ---: | ---: | ---: | ---: | ---: |",
         (
             f"| {report.budget.evaluation_count} | {report.budget.evaluation_limit} | "
@@ -882,7 +934,7 @@ def _render_markdown(report: OpaqueOptimizationReportV1) -> str:
             "## Candidate evidence",
             "",
             "| Stage | Recipe | Fidelity | Observations | Feasible | "
-            "Observed medians | Peak bytes |",
+            "Observed medians | Max reported materialized bytes |",
             "| ---: | --- | --- | ---: | --- | --- | ---: |",
         ]
     )
