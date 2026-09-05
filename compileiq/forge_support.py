@@ -28,7 +28,7 @@ from compileiq.utils.validation import Score
 FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA = "compileiq.taichi-forge-recipe-search-capability.v2"
 FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA = "compileiq.taichi-forge-opaque-target-contract.v1"
 FORGE_RECIPE_SEARCH_FORK_BUILD_ID = "compileiq-taichi-forge-complete-recipes.v2"
-FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev6+taichiforge.report1"
+FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev7+taichiforge.report1"
 FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 6
 FORGE_RECIPE_SEARCH_CAPABILITY_ID_PREFIX = "ciq-forge-cap-v2:"
 
@@ -157,7 +157,7 @@ class ForgeRecipeSearchCapabilityV2(BaseModel):
     fork_build_id: Literal["compileiq-taichi-forge-complete-recipes.v2"] = (
         FORGE_RECIPE_SEARCH_FORK_BUILD_ID
     )
-    package_version: Literal["1.0.0dev6+taichiforge.report1"] = (
+    package_version: Literal["1.0.0dev7+taichiforge.report1"] = (
         FORGE_RECIPE_SEARCH_PACKAGE_VERSION
     )
     opaque_recipe_domain_schema: Literal["compileiq.opaque-recipe-domain.v1"] = (

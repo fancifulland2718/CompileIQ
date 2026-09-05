@@ -62,7 +62,7 @@ def test_forge_recipe_capability_is_versioned_and_core_locked():
     assert payload["opaque_recipe_search"] == ("dynamic_batch_pareto_racing_main_thread_v2")
     assert payload["opaque_recipe_search_v1"] == "bounded_exhaustive_main_thread_v1"
     assert payload["fork_build_id"] == ("compileiq-taichi-forge-complete-recipes.v2")
-    assert payload["package_version"] == ("1.0.0dev6+taichiforge.report1")
+    assert payload["package_version"] == ("1.0.0dev7+taichiforge.report1")
     assert payload["optimization_report_schema"] == (
         "compileiq.opaque-optimization-report.v1"
     )
