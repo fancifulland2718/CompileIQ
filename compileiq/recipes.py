@@ -467,6 +467,11 @@ class OpaqueRecipeBatchV2(BaseModel):
     compileiq_core_lock: str
     stage_index: int
     stage_fingerprint: str
+    # Pages retain one logical stage's fidelity and compare their union. The
+    # physical batch chain remains contiguous for checkpoint/replay auditing.
+    page_group_fingerprint: str | None = None
+    page_index: int = 0
+    page_final: bool = True
     parent_batch_fingerprint: str | None = None
     fidelity: OpaqueRecipeFidelityV2
     recipes: tuple[OpaqueRecipeLineageV2, ...]
@@ -503,6 +508,13 @@ class OpaqueRecipeBatchV2(BaseModel):
             raise ValueError("compileiq_core_lock is not a sha256 identity")
         if isinstance(self.stage_index, bool) or self.stage_index < 0:
             raise ValueError("stage_index must be a nonnegative integer")
+        if isinstance(self.page_index, bool) or self.page_index < 0:
+            raise ValueError("page_index must be a nonnegative integer")
+        if self.page_group_fingerprint is None:
+            if self.page_index != 0 or not self.page_final:
+                raise ValueError("paging requires a page group fingerprint")
+        else:
+            _bounded_nonempty_text(self.page_group_fingerprint, field_name="page_group_fingerprint")
         if not self.recipes:
             raise ValueError("opaque recipe batch must contain at least one recipe")
         if len(self.recipes) > self.MAX_RECIPES:
@@ -524,7 +536,7 @@ class OpaqueRecipeBatchV2(BaseModel):
                 self.parent_batch_fingerprint, str
             ) or not self.parent_batch_fingerprint.startswith(self.FINGERPRINT_PREFIX):
                 raise ValueError("nonzero stages require a parent batch fingerprint")
-            if any(not item.parent_recipe_ids for item in recipes):
+            if self.page_index == 0 and any(not item.parent_recipe_ids for item in recipes):
                 raise ValueError("nonzero-stage recipes require immediate parent lineage")
         return self
 

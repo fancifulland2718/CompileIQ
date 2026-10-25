@@ -28,7 +28,7 @@ from compileiq.utils.validation import Score
 FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA = "compileiq.taichi-forge-recipe-search-capability.v2"
 FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA = "compileiq.taichi-forge-opaque-target-contract.v1"
 FORGE_RECIPE_SEARCH_FORK_BUILD_ID = "compileiq-taichi-forge-complete-recipes.v2"
-FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev7+taichiforge.report1"
+FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev8+taichiforge.pages1"
 FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 6
 FORGE_RECIPE_SEARCH_CAPABILITY_ID_PREFIX = "ciq-forge-cap-v2:"
 
@@ -157,9 +157,7 @@ class ForgeRecipeSearchCapabilityV2(BaseModel):
     fork_build_id: Literal["compileiq-taichi-forge-complete-recipes.v2"] = (
         FORGE_RECIPE_SEARCH_FORK_BUILD_ID
     )
-    package_version: Literal["1.0.0dev7+taichiforge.report1"] = (
-        FORGE_RECIPE_SEARCH_PACKAGE_VERSION
-    )
+    package_version: Literal["1.0.0dev8+taichiforge.pages1"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
     opaque_recipe_domain_schema: Literal["compileiq.opaque-recipe-domain.v1"] = (
         OpaqueRecipeDomainV1.SCHEMA
     )
@@ -196,9 +194,9 @@ class ForgeRecipeSearchCapabilityV2(BaseModel):
     optimization_report_schema: Literal["compileiq.opaque-optimization-report.v1"] = (
         "compileiq.opaque-optimization-report.v1"
     )
-    optimization_report_renderer: Literal[
+    optimization_report_renderer: Literal["json_fact_source_markdown_projection_v1"] = (
         "json_fact_source_markdown_projection_v1"
-    ] = "json_fact_source_markdown_projection_v1"
+    )
     max_recipe_ids: int = OpaqueRecipeDomainV1.MAX_RECIPE_IDS
     max_field_utf8_bytes: int = OpaqueRecipeDomainV1.MAX_FIELD_UTF8_BYTES
     max_canonical_bytes: int = OpaqueRecipeDomainV1.MAX_CANONICAL_BYTES
@@ -216,6 +214,7 @@ class ForgeRecipeSearchCapabilityV2(BaseModel):
     opaque_recipe_search_v1: Literal["bounded_exhaustive_main_thread_v1"] = (
         "bounded_exhaustive_main_thread_v1"
     )
+    opaque_recipe_paging: Literal["logical_stage_pages_v1"] = "logical_stage_pages_v1"
     core_manifest_schema_version: int
     core_commit: str
     core_lock: str
@@ -306,6 +305,7 @@ def forge_recipe_search_capability(
         "objective_worker": "forge_main_thread_serial_v1",
         "opaque_recipe_search": "dynamic_batch_pareto_racing_main_thread_v2",
         "opaque_recipe_search_v1": "bounded_exhaustive_main_thread_v1",
+        "opaque_recipe_paging": "logical_stage_pages_v1",
         "core_manifest_schema_version": schema_version,
         "core_commit": core_commit,
         "core_lock": core_lock,

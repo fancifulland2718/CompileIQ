@@ -43,6 +43,28 @@ Forge integrations should use V2 because V1 cannot express survivor-driven
 batches, fidelity changes, portable checkpoints, or the complete report
 contract.
 
+### Logical-stage pages
+
+The optional `opaque_recipe_paging="logical_stage_pages_v1"` capability (first
+provided by `1.0.0dev8+taichiforge.pages1`) lets one logical stage span multiple
+bounded V2 batches. `page_group_fingerprint`, consecutive `page_index` values,
+and `page_final` identify that stage. Physical `stage_index` and parent batch
+fingerprints remain consecutive across every frame. Each page keeps the same
+fidelity and baseline descriptor. Nonbaseline recipes appear only once per group.
+
+Only a completed page can advance. Survivors, Pareto comparisons and final
+selection use the union of its pages; completion also requires the final page.
+Continuation pages retain lineage from the previous *logical* stage. Evaluation
+budgets and measurement keys span pages, so a reused baseline is not remeasured.
+Checkpoints retain the entire chain and reject missing/reordered pages. Across
+pages, physical aliases use the first admitted representative; reports explicitly
+label this policy rather than claiming bytewise-smallest ordering.
+
+The 4096-ID and canonical-byte limits apply to each encoded frame, not the total
+provider domain. Providers generate frames lazily and retain their own generation
+identity. This does not enable automatic tuning, change trial execution, or
+remove caller-declared search budgets. The V1 fixed-domain interface is unchanged.
+
 ## Minimal staged session
 
 ```python

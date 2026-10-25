@@ -211,6 +211,9 @@ class OpaqueReportCandidateV1(_ReportModel):
 
 
 class OpaqueReportStageV1(_ReportModel):
+    page_group_fingerprint: str | None = None
+    page_index: int = 0
+    page_final: bool = True
     batch_fingerprint: str
     stage_index: int
     parent_batch_fingerprint: str | None
@@ -585,6 +588,9 @@ def build_opaque_optimization_report(
                 batch_fingerprint=batch.batch_fingerprint,
                 stage_index=batch.stage_index,
                 parent_batch_fingerprint=batch.parent_batch_fingerprint,
+                page_group_fingerprint=batch.page_group_fingerprint,
+                page_index=batch.page_index,
+                page_final=batch.page_final,
                 fidelity_name=batch.fidelity.name,
                 fidelity_fingerprint=batch.fidelity.fidelity_fingerprint,
                 fidelity_ordinal=batch.fidelity.ordinal,
@@ -610,12 +616,22 @@ def build_opaque_optimization_report(
     candidates.sort(key=lambda item: (item.stage_index, item.candidate_key))
 
     current_by_recipe = {str(item["recipe_id"]): item for item in current_aggregates}
-    current_candidates = {
-        candidate.recipe_id: candidate
-        for candidate in candidates
-        if candidate.batch_fingerprint
-        == (checkpoint.batches[-1].batch_fingerprint if checkpoint.batches else "")
-    }
+    current_batches = ()
+    if checkpoint.batches:
+        last = checkpoint.batches[-1]
+        current_batches = (
+            checkpoint.batches[-last.page_index - 1 :]
+            if last.page_group_fingerprint is not None
+            else (last,)
+        )
+    current_fingerprints = {batch.batch_fingerprint for batch in current_batches}
+    current_candidates = {}
+    for candidate in candidates:
+        if candidate.batch_fingerprint not in current_fingerprints:
+            continue
+        previous = current_candidates.get(candidate.recipe_id)
+        if previous is None or candidate.total_observation_count > previous.total_observation_count:
+            current_candidates[candidate.recipe_id] = candidate
     pareto_entries = tuple(
         OpaqueReportParetoEntryV1(
             candidate_key=current_candidates[str(item["recipe_id"])].candidate_key,
@@ -743,8 +759,14 @@ def build_opaque_optimization_report(
                 ),
             )
         )
+    completed_evidence = {
+        (candidate.recipe_id, candidate.fidelity_fingerprint)
+        for candidate in candidates if candidate.complete
+    }
     incomplete_candidates = [
-        candidate for candidate in candidates if not candidate.complete
+        candidate for candidate in candidates
+        if not candidate.complete
+        and (candidate.recipe_id, candidate.fidelity_fingerprint) not in completed_evidence
     ]
     if incomplete_candidates:
         warnings.append(
