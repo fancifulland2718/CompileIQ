@@ -1,0 +1,21 @@
+{
+  "outputs": {
+    "native_runtime": {
+      "filename": "compileiq_native_runtime-1.1.0.dev0-cp313-cp313-linux_aarch64.whl",
+      "sha256": "sha256:97ddd46fcc31028ae1c6f243bdc54e2a0a8977b0fee6723c1025e02bd57de584",
+      "size": 1722085
+    }
+  },
+  "provenance": {
+    "job_id": 491942019,
+    "pipeline_id": 74423905,
+    "source_commit": "26400b8860d31347b89dda428af590c975df2b55"
+  },
+  "runtime": {
+    "abi_tag": "cp313",
+    "platform_tag": "linux_aarch64",
+    "python_tag": "cp313",
+    "wheel_tag": "cp313-cp313-linux_aarch64"
+  },
+  "schema_version": 1
+}

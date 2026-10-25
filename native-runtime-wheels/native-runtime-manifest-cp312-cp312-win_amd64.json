@@ -1,0 +1,21 @@
+{
+  "outputs": {
+    "native_runtime": {
+      "filename": "compileiq_native_runtime-1.1.0.dev0-cp312-cp312-win_amd64.whl",
+      "sha256": "sha256:67d8b470b709628b53969283eb24824bf62a2c0e8b3faaa1ba7e61b2d7033dda",
+      "size": 1384567
+    }
+  },
+  "provenance": {
+    "job_id": 491942026,
+    "pipeline_id": 74423905,
+    "source_commit": "26400b8860d31347b89dda428af590c975df2b55"
+  },
+  "runtime": {
+    "abi_tag": "cp312",
+    "platform_tag": "win_amd64",
+    "python_tag": "cp312",
+    "wheel_tag": "cp312-cp312-win_amd64"
+  },
+  "schema_version": 1
+}

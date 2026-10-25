@@ -6,10 +6,12 @@ from compileiq.search_spaces.models import ParamConfig
 
 def _encode_for_core(value: str) -> str:
     """
-    Encodes a string to be used in Core to avoid issues with special characters.
+    Encodes one search-space key segment so nested keys can be flattened with "_"
+    separators and restored later, independent of the characters users choose.
+
+    The name predates the removal of the bundled core; engines still rely on this
+    flattened key format.
     """
-    # We need to add a prefix in case the hex is just a number.
-    # Core will not accept number-only values as valid identifiers.
     return base64.b64encode(value.encode()).decode()
 
 
@@ -149,3 +151,16 @@ def load_compiler_config(file_path: str) -> str:
     """
     with open(file_path, "rb") as f:
         return f.read().hex()
+
+
+class _CyFunctionDetectorMeta(type):
+    """Recognize Cython functions without importing Cython at runtime."""
+
+    def __instancecheck__(self, instance):
+        """Recognize Cython's function runtime type without importing Cython."""
+
+        return instance.__class__.__name__ == "cython_function_or_method"
+
+
+class CyFunctionDetector(metaclass=_CyFunctionDetectorMeta):
+    """Pydantic ignored-type adapter for methods compiled by Cython."""

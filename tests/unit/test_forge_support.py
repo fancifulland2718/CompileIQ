@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 import threading
 
@@ -10,7 +9,8 @@ except ModuleNotFoundError:  # Python 3.10
 import pytest
 from pydantic import ValidationError
 
-from compileiq.core.verify_core import MANIFEST_PATH, load_manifest
+from compileiq._forge_engine import SOURCE_FILES
+import compileiq._forge_engine as engine
 from compileiq.forge_support import (
     FORGE_RECIPE_SEARCH_FORK_BUILD_ID,
     FORGE_RECIPE_SEARCH_PACKAGE_VERSION,
@@ -30,7 +30,7 @@ def test_forge_recipe_capability_is_versioned_and_core_locked():
     payload = capability.as_dict()
 
     assert payload["schema"] == "compileiq.taichi-forge-recipe-search-capability.v2"
-    assert payload["protocol_revision"] == 6
+    assert payload["protocol_revision"] == 7
     assert payload["fork_build_id"] == FORGE_RECIPE_SEARCH_FORK_BUILD_ID
     assert payload["package_version"] == FORGE_RECIPE_SEARCH_PACKAGE_VERSION
     assert payload["opaque_recipe_domain_schema"] == ("compileiq.opaque-recipe-domain.v1")
@@ -52,36 +52,41 @@ def test_forge_recipe_capability_is_versioned_and_core_locked():
         "compileiq.taichi-forge-search-finalization.v1"
     )
     assert payload["search_status_schema"] == "compileiq.taichi-forge-search-status.v2"
+    assert payload["opaque_recipe_paging"] == "logical_stage_pages_v1"
     assert payload["max_recipe_ids"] == 4096
     assert payload["provider_recipe_ids_cross_core_boundary"] is False
-    assert payload["opaque_domain_binding"] == ("capability_id_core_commit_core_lock")
-    assert payload["core_verification"] == (
-        "bundled_manifest_lock_and_platform_hashes_at_search_start_no_override"
-    )
+    assert payload["opaque_domain_binding"] == ("capability_id_scheduler_source_lock")
+    assert payload["core_verification"] == ("python_scheduler_source_digest_at_search_start")
     assert payload["objective_worker"] == "forge_main_thread_serial_v1"
     assert payload["opaque_recipe_search"] == ("dynamic_batch_pareto_racing_main_thread_v2")
     assert payload["opaque_recipe_search_v1"] == "bounded_exhaustive_main_thread_v1"
     assert payload["fork_build_id"] == ("compileiq-taichi-forge-complete-recipes.v2")
-    assert payload["package_version"] == ("1.0.0dev6+taichiforge.report1")
-    assert payload["optimization_report_schema"] == (
-        "compileiq.opaque-optimization-report.v1"
-    )
-    assert payload["optimization_report_renderer"] == (
-        "json_fact_source_markdown_projection_v1"
-    )
+    assert payload["package_version"] == ("1.1.0b2+taichiforge.1")
+    assert payload["optimization_report_schema"] == ("compileiq.opaque-optimization-report.v1")
+    assert payload["optimization_report_renderer"] == ("json_fact_source_markdown_projection_v1")
     assert payload["core_lock"].startswith("sha256:")
     assert payload["capability_id"].startswith("ciq-forge-cap-v2:")
     assert ForgeRecipeSearchCapabilityV1(**payload) == capability
 
 
-def test_forge_recipe_capability_fails_closed_on_manifest_drift(tmp_path):
-    manifest = load_manifest(MANIFEST_PATH)
-    manifest["core_commit"] = "forged"
-    manifest_path = tmp_path / "core-manifest.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-    with pytest.raises(RuntimeError, match="core_lock mismatch"):
-        forge_recipe_search_capability(manifest_path)
+def test_forge_recipe_capability_tracks_actual_scheduler_source(tmp_path):
+    root = Path(engine.__file__).resolve().parent
+    for relative in SOURCE_FILES:
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((root / relative).read_bytes())
+    before = forge_recipe_search_capability(tmp_path)
+    assert before == forge_recipe_search_capability()
+    target = tmp_path / "forge_search_v2.py"
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\n# changed scheduler\n", encoding="utf-8"
+    )
+    after = forge_recipe_search_capability(tmp_path)
+    assert before.core_lock != after.core_lock
+    assert before.capability_id != after.capability_id
+    target.unlink()
+    with pytest.raises(RuntimeError, match="scheduler source is unavailable"):
+        forge_recipe_search_capability(tmp_path)
 
 
 def test_forge_recipe_capability_identity_cannot_be_relabelled():

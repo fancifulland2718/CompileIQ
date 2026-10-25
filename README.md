@@ -1,5 +1,11 @@
 # CompileIQ - NVIDIA Compiler HPO
 
+> **Taichi Forge fork:** this branch retains NVIDIA CompileIQ 1.1's `amber`
+> compiler-control search and adds Forge's complete-recipe scheduler. Install
+> the wheel from this fork's release, not the upstream PyPI wheel, for Forge
+> integration. See [the Forge extension](docs/taichi_forge_opaque_recipes.md).
+> Autotuning remains opt-in; ordinary Forge execution does not require CompileIQ.
+
 **Push GPU kernels further with NVIDIA compiler tuning.**
 
 CompileIQ is a hyperparameter optimizer for NVIDIA compiler controls and application parameters. It helps kernel developers tune those controls against workload-specific benchmarks, adding another optimization path for CUDA C++, Triton, and Helion kernels after source-level tuning has plateaued.
@@ -33,16 +39,29 @@ You can either install through [PyPI](https://pypi.org/project/compileiq/):
 pip install compileiq
 ```
 
-Or, build from the the source in this repository yourself:
+The CompileIQ 1.1 release contract is one complete distribution: each published
+platform wheel contains the native `amber` engine, which is the default
+and the only bundled engine, with no separate runtime package to install.
+In CompileIQ 1.1, `amber` replaces the original search core.
+
+For editable development, `make install` installs the frontend and materializes
+the pinned native payload checked into this repository through Git LFS, so fetch
+the LFS objects first:
 
 ```bash
-pip install -e .
+git lfs pull
+make install
 ```
+
+`make install-frontend` installs the frontend without an engine, which is enough
+for linting, type checking, and unit tests.
 
 ## Supported platforms
 
-CompileIQ supports Python 3.10, 3.11, 3.12, 3.13, and 3.14. Published wheels include the
-bundled CompileIQ core for Linux x86_64, Linux aarch64, and Windows amd64.
+CompileIQ 1.1 targets Python 3.11, 3.12, 3.13, and 3.14. The beta CI matrix
+composes, verifies, and clean-installs complete wheels for Linux x86_64, Linux
+ARM64, Windows AMD64, and macOS ARM64 on each of those Python versions. Every
+cell provides the same `amber` engine.
 
 Linux wheels target glibc 2.34 or newer and are tagged `manylinux_2_34`. See
 the [installation guide](docs/install.md) for Linux runtime library
@@ -82,7 +101,6 @@ boundary.
 
 | Environment Variable | Default Value | Type | Description
 | ------ | ------ | ------ | ------ |
-| CIQ_SOCKET_TIMEOUT | 20 | int | Controls how long CompileIQ waits for a core response. If you experience timeouts because your search space is too big, consider increasing this value.
 | CIQ_KEEP_CACHE | False | bool | If set to True, `.cache` files will not be deleted.
 | CIQ_PROCESS_MODE | "forkserver" | str | Start method for process-based workers. Set to "fork" for tighter process separation when threads are involved. `IsoMultiProcessWorker` defaults to "fork" independently.
 | CIQ_SEARCH_SPACES_DIR | unset | path | Reads compiler search-space `manifest.json` and `.bin` files from a local mirror instead of GitHub.

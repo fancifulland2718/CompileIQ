@@ -1,11 +1,10 @@
-import json
 from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
 
 from compileiq.ciq import Search
-from compileiq.core.core_types import ParameterSet, SingleCandidate
+from compileiq.backends import BackendCandidate
 from compileiq.forge_support import forge_recipe_search_capability
 from compileiq.recipes import (
     OPAQUE_RECIPE_DOMAIN_FINGERPRINT_KEY,
@@ -16,7 +15,7 @@ from compileiq.recipes import (
 )
 from compileiq.search_spaces.models import ChoiceParamConfig, LiteralParamConfig
 from compileiq.types import SearchConfiguration
-from compileiq.utils.helpers import _encode_for_core
+from compileiq.forge_support import ForgeMainThreadWorker
 
 
 def _domain(**overrides):
@@ -85,7 +84,7 @@ def test_dynamic_domain_fingerprint_binds_generation_contract(field, value):
     )
 
 
-def _make_search(mocker, mock_socket_listen, tmp_path, domain=None, objective=None):
+def _make_search(mocker, scripted_engine, tmp_path, domain=None, objective=None):
     mocker.patch("compileiq.worker.multiprocessing.Manager", return_value=MagicMock())
     return Search(
         objective_function=objective or (lambda _: 1.0),
@@ -93,24 +92,27 @@ def _make_search(mocker, mock_socket_listen, tmp_path, domain=None, objective=No
         search_config=SearchConfiguration(generations=1, pool_size=6),
         cache_folder=tmp_path,
         disable_progress_bar=True,
+        worker_type=ForgeMainThreadWorker,
+        engine=scripted_engine,
     )
 
 
-def _parameter_set(candidate):
-    encoded = {_encode_for_core(key): value for key, value in candidate.items()}
-    return ParameterSet(
-        params=[SingleCandidate(id=1, knobs=json.dumps(encoded))],
-        invocation_id=2,
-        generation_num=0,
-    )
+def _evaluate(search, candidate):
+    item = BackendCandidate(param_id="opaque-1", params=candidate)
+    search._backend_impl._pending = {"opaque-1": item}
+    return search.evaluate([item])
 
 
 def test_opaque_recipe_domain_v1_has_stable_golden_fingerprint():
-    domain = _domain()
+    domain = _domain(
+        compileiq_capability_id="ciq-forge-cap-v2:" + "1" * 64,
+        compileiq_core_commit="test-engine",
+        compileiq_core_lock="sha256:" + "2" * 64,
+    )
 
     assert domain.recipe_ids == ("recipe:alpha", "recipe:zeta")
     assert domain.domain_fingerprint == (
-        "ciq-domain-v1:f9bf45b9c26a1f465e632c6c147c08cf7da93ffca160d64b76c7655858b5adfd"
+        "ciq-domain-v1:8b6c51123c11a941600284ef1da28e7d89a13edd0ee914e2a2d2d1d7fbfb3fb2"
     )
     assert domain.model_dump(by_alias=True)["schema"] == domain.SCHEMA
 
@@ -185,11 +187,9 @@ def test_recipe_domain_is_strict_frozen_and_forbids_extra_fields():
         domain.domain_version = "changed"
 
 
-def test_search_compiles_domain_to_existing_literal_and_choice(
-    mocker, mock_socket_listen, tmp_path
-):
+def test_search_compiles_domain_to_existing_literal_and_choice(mocker, scripted_engine, tmp_path):
     domain = _domain()
-    search = _make_search(mocker, mock_socket_listen, tmp_path, domain)
+    search = _make_search(mocker, scripted_engine, tmp_path, domain)
 
     assert search._opaque_recipe_domain is domain
     assert isinstance(search.search_space, dict)
@@ -205,31 +205,34 @@ def test_search_compiles_domain_to_existing_literal_and_choice(
 
 
 def test_search_rejects_opaque_domain_bound_to_another_compileiq_core(
-    mocker, mock_socket_listen, tmp_path
+    mocker, scripted_engine, tmp_path
 ):
     domain = _domain(compileiq_core_commit="different-core")
 
     with pytest.raises(RuntimeError, match="exact modified CompileIQ"):
-        _make_search(mocker, mock_socket_listen, tmp_path, domain)
+        _make_search(mocker, scripted_engine, tmp_path, domain)
 
 
-def test_search_accepts_exact_domain_candidate(mocker, mock_socket_listen, tmp_path):
+def test_search_accepts_exact_domain_candidate(mocker, scripted_engine, tmp_path):
     domain = _domain()
-    search = _make_search(mocker, mock_socket_listen, tmp_path, domain)
+    search = _make_search(mocker, scripted_engine, tmp_path, domain)
     candidate = {
         OPAQUE_RECIPE_DOMAIN_FINGERPRINT_KEY: domain.domain_fingerprint,
         OPAQUE_RECIPE_ID_KEY: "ciq-recipe-v1-0000",
     }
 
-    assert search._load_params(_parameter_set(candidate)) == [
-        {
-            OPAQUE_RECIPE_DOMAIN_FINGERPRINT_KEY: domain.domain_fingerprint,
-            OPAQUE_RECIPE_ID_KEY: "recipe:alpha",
-        }
+    observed = []
+    search.objective_function = lambda params: observed.append(params) or 1.0
+    scores = _evaluate(search, candidate)
+    assert observed == [
+        {"domain_fingerprint": domain.domain_fingerprint, "recipe_id": "recipe:alpha"}
     ]
+    assert scores[0].params == candidate
+    search.tell(scores)
+    assert search.opaque_recipe_core_provenance["proposal_engine"] == scripted_engine
     assert search.opaque_recipe_audit_records == (
         {
-            "param_id": 1,
+            "param_id": "opaque-1",
             "schema": OPAQUE_RECIPE_SELECTION_AUDIT_SCHEMA,
             "provider_namespace": domain.provider_namespace,
             "domain_version": domain.domain_version,
@@ -286,36 +289,30 @@ def test_search_accepts_exact_domain_candidate(mocker, mock_socket_listen, tmp_p
     ],
 )
 def test_candidate_domain_is_revalidated_before_objective(
-    mocker, mock_socket_listen, tmp_path, candidate, match
+    mocker, scripted_engine, tmp_path, candidate, match
 ):
     domain = _domain()
     if candidate.get("domain_fingerprint") == "valid":
         candidate["domain_fingerprint"] = domain.domain_fingerprint
-    search = _make_search(mocker, mock_socket_listen, tmp_path, domain)
+    search = _make_search(mocker, scripted_engine, tmp_path, domain)
 
     with pytest.raises(RuntimeError, match=match):
-        search._load_params(_parameter_set(candidate))
+        _evaluate(search, candidate)
 
 
 def test_invalid_domain_candidate_never_reaches_worker_or_objective(
-    mocker, mock_socket_listen, tmp_path
+    mocker, scripted_engine, tmp_path
 ):
     domain = _domain()
     objective = MagicMock(return_value=1.0)
-    search = _make_search(mocker, mock_socket_listen, tmp_path, domain, objective)
+    search = _make_search(mocker, scripted_engine, tmp_path, domain, objective)
     candidate = {
         OPAQUE_RECIPE_DOMAIN_FINGERPRINT_KEY: "ciq-domain-v1:" + ("0" * 64),
         OPAQUE_RECIPE_ID_KEY: "ciq-recipe-v1-0000",
     }
-    mocker.patch(
-        "compileiq.ciq.CoreIPC.receive_from_core",
-        return_value=_parameter_set(candidate),
-    )
     worker_run = mocker.patch.object(search._worker, "run")
-    search._core_socket = MagicMock()
-
     with pytest.raises(RuntimeError, match="domain fingerprint mismatch"):
-        search._process_candidates(num_workers=1)
+        _evaluate(search, candidate)
 
     worker_run.assert_not_called()
     objective.assert_not_called()

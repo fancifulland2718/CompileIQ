@@ -265,18 +265,27 @@ class Worker(ABC):
         """Whether this worker supports the `task_timeout` parameter on its `run` method."""
         return self._supports_timeout
 
+    @property
+    def supports_managed_execution(self) -> bool:
+        """Whether this worker can execute objectives through ``evaluate()`` or ``start()``."""
+        return True
+
     @abstractmethod
     def run(
         self,
         *,
         function: Callable,
         params_pool: Sequence[ParamArg],
-        params_ids: Sequence[int],
+        params_ids: Sequence[int | str],
         num_function_returns: int = 1,
         num_workers: int = 1,
         **kwargs,
     ) -> list[Score]:
-        """Execute the objective function across a pool of parameters."""
+        """Execute a parameter pool while preserving backend-owned candidate IDs.
+
+        ``params_ids`` may contain integers or strings. Every returned non-baseline
+        ``Score`` must carry the ID associated with the corresponding input parameter.
+        """
         pass
 
     @classmethod
@@ -389,12 +398,17 @@ class WorkerTypes(StrEnum):
         ASYNC:
             Uses Python's asyncio library to run your workload. The objective function must be
             of type `async` and be prepared to take advantage of concurrency.
+
+        MANUAL:
+            Disables CompileIQ-managed objective execution. Use ``ask()`` to obtain candidates,
+            evaluate them externally, and submit their scores through ``tell()``.
     """
 
     RAY = "ray"
     NATIVE = "native"
     ISOLATED = "isolated"
     ASYNC = "async"
+    MANUAL = "manual"
     DEFAULT = NATIVE
 
     def worker_type(self) -> type[Worker]:
@@ -404,6 +418,7 @@ class WorkerTypes(StrEnum):
             RayWorker,
             AsyncWorker,
             IsoMultiProcessWorker,
+            ManualWorker,
         )
 
         _MAP = {
@@ -411,6 +426,7 @@ class WorkerTypes(StrEnum):
             "ray": RayWorker,
             "isolated": IsoMultiProcessWorker,
             "async": AsyncWorker,
+            "manual": ManualWorker,
         }
         return _MAP[self.value]
 
@@ -513,20 +529,26 @@ class SearchConfiguration(BaseModel, extra="forbid"):
         default=None,
         gt=1,
         multiple_of=2,
-        description="The number of parents in a given generation that will become the progenitors "
-        "of the next generation. The difference between pool size and cull size are the survivors "
-        "of the next generation. If set to None, we calculate it based on pool size.",
+        description="Deprecated: has no effect since CompileIQ 1.1. "
+        "Search ignores a non-default value with a FutureWarning; amber's closest option is "
+        "survivor_count. It was the number of parents in a generation that become the "
+        "progenitors of the next. If set to None, we calculate it based on pool size.",
     )
     mutate_rate: float = Field(
         default=0.25,
         gt=0.0,
         lt=1.0,
-        description="The chance a sampled candidate will be perturbed between iterations.",
+        description="Deprecated: has no effect since CompileIQ 1.1. "
+        "Search ignores a non-default value with a FutureWarning; amber's closest option is "
+        "mutation_probability. It was the chance a sampled candidate is perturbed between "
+        "iterations.",
     )
     objective_weights: Optional[list[float]] = Field(
         default=None,
-        description="If you are doing multiobjective search you may want to weight-in more scores. "
-        "This will affect how we generate the algorithm reference directions.",
+        description="Deprecated: has no effect since CompileIQ 1.1. "
+        "Search ignores a non-default value with a FutureWarning; amber's closest option is "
+        "reference_direction_weights. It weighted objectives when generating reference "
+        "directions.",
     )
     init_with_true_random_threshold: Optional[float] = Field(
         default=0.9,
@@ -536,31 +558,26 @@ class SearchConfiguration(BaseModel, extra="forbid"):
     )
     enable_large_fail_pool: bool = Field(
         default=True,
-        description="When a generation does not achieve at least 20pct of passing solutions it"
-        " will not move into the next. The subsequent sample batch will only contain "
-        "the minimal number of passing samples required for this generation to pass. "
-        "If this is set to True, it will resubmit an entire pool size length batch.",
+        description="Deprecated: has no effect since CompileIQ 1.1. "
+        "Search ignores a non-default value with a FutureWarning; amber always replaces each "
+        "failed candidate one-for-one. It chose whether the original core resubmitted a whole "
+        "pool after a generation with too few passing candidates.",
     )
 
     @model_validator(mode="after")
-    def validate_weights(self):
-        if self.objective_weights is not None:
-            if len(self.objective_weights) != self.num_objectives:
-                raise ValueError(
-                    f"Length of objective weights ({self.objective_weights}) "
-                    f"must be equal to num_objectives ({self.num_objectives})"
-                )
-            if sum(self.objective_weights) != 1.0:
-                raise ValueError("Objective Weights must add up to 1.0")
-        return self
-
-    @model_validator(mode="after")
     def set_pool_and_cull_sizes(self):
+        """Derive safe even sizes without marking defaults as caller-supplied.
+
+        Provider validators inspect ``model_fields_set`` to distinguish explicit
+        legacy controls from values CompileIQ derived automatically. Using
+        ``object.__setattr__`` preserves that distinction during model validation.
+        """
+
         target = (2 * self.num_objectives) + 1
         cull_pct = 0.75
         if self.pool_size is None:
             pool_size = max(ceil(target / (1 - cull_pct)), 32)
-            self.pool_size = pool_size + pool_size % 2
+            object.__setattr__(self, "pool_size", pool_size + pool_size % 2)
 
         if self.pool_size is None:
             raise RuntimeError("pool_size must be populated before deriving cull_size")
@@ -572,7 +589,7 @@ class SearchConfiguration(BaseModel, extra="forbid"):
             # Cap so that pool_size - cull_size >= min_survivors
             max_cull = self.pool_size - min_survivors
             max_cull = max_cull - max_cull % 2  # round down to even
-            self.cull_size = max(2, min(cull_size, max_cull))
+            object.__setattr__(self, "cull_size", max(2, min(cull_size, max_cull)))
 
         return self
 
@@ -623,7 +640,16 @@ class SearchConfiguration(BaseModel, extra="forbid"):
         return self
 
     def to_legacy(self) -> str:
-        """Convert configuration into expected legacy format"""
+        """Convert configuration into expected legacy format
+
+        Deprecated: will be removed in a future release.
+        """
+        warnings.warn(
+            "SearchConfiguration.to_legacy is deprecated and will be removed in a "
+            "future release.",
+            FutureWarning,
+            stacklevel=2,
+        )
         class_dict = self.model_dump()
 
         legacy_string = f";THIS FILE WAS GENERATED USING COMPILEIQ {version('compileiq')}\n\n"
@@ -634,7 +660,7 @@ class SearchConfiguration(BaseModel, extra="forbid"):
                     legacy_string += f"(seek_minimum . {value})\n"
                     continue
                 elif isinstance(val, bool):
-                    # Core source expects #t and #f for bool
+                    # The legacy format spells booleans #t and #f
                     val = "#t" if val else "#f"
                 elif isinstance(val, str):
                     # We need to explicit add quotes for strings
@@ -653,15 +679,12 @@ class SearchConfiguration(BaseModel, extra="forbid"):
 
         return legacy_string
 
-    def to_json_dict(self) -> dict:
-        """Convert configuration into JSON dict for core consumption."""
-        class_dict = self.model_dump(mode="json")
-        return {k: v for k, v in class_dict.items() if v is not None}
-
     @classmethod
     def from_legacy(cls, legacy: str):
         """
         Converts legacy lisp-like format into the SearchConfiguration Object.
+
+        Deprecated: will be removed in a future release.
 
         Warning:
             It will ignore all fields that are not available at SearchConfiguration
@@ -669,6 +692,12 @@ class SearchConfiguration(BaseModel, extra="forbid"):
         Warning:
             It will raise exceptions if using fields that are unsupported in CompileIQ
         """
+        warnings.warn(
+            "SearchConfiguration.from_legacy is deprecated and will be removed in a "
+            "future release.",
+            FutureWarning,
+            stacklevel=2,
+        )
         if legacy.endswith(".config") and pathlib.Path(legacy).exists():
             with open(legacy, "r") as f:
                 legacy_str = f.read()
@@ -706,9 +735,6 @@ class SearchConfiguration(BaseModel, extra="forbid"):
 
 class InternalSearchConfiguration(SearchConfiguration):
     """
-    Used internally to construct the core search-space config.
-    These are fields CompileIQ overwrites and the user should not set by themselves.
+    The validated search configuration that Search hands to the selected engine.
+    Engines and internal extensions may subclass it with fields that users do not set.
     """
-
-    dna_config: str | List[str] = ""
-    enable_result_file: bool = False

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "compileiq"
-version = "1.0.0dev6+taichiforge.report1"
+version = "1.1.0b2+taichiforge.1"
 description = "NVIDIA compiler control optimization engine."
 authors = ["NVIDIA Corporation"]
 maintainers = ["CompileIQ Team <compileiq@nvidia.com>"]
@@ -8,13 +8,10 @@ readme = "README.md"
 repository = "https://github.com/fancifulland2718/CompileIQ"
 documentation = "https://github.com/NVIDIA/CompileIQ/blob/main/README.md"
 packages = [{ include = "compileiq", format = "wheel" }]
-include = [
-    { path = "compileiq/core/executable/**/*", format = "wheel" },
-    { path = "schemas/opaque-optimization-report-v1.schema.json", format = "wheel" },
-]
+include = [{ path = "schemas/opaque-optimization-report-v1.schema.json", format = "wheel" }]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.15"
+python = ">=3.11,<3.15"
 pandas = "^2.2.3"
 pydantic = "^2.9.2"
 tqdm = "^4.67.0"
@@ -25,18 +22,25 @@ dill = "^0.4.0"
 msgpack = "^1.1.1"
 
 # Nspec vulnerabilities
-urllib3 = "^2.6.2" # ray, mlflow
+urllib3 = "^2.8.0" # ray, mlflow
 requests = "^2.32.5" #ray, mlflow
 aiohttp = "^3.13.3" # ray
 json5 = "^0.14.0"
+pillow = "^12.3.0"
+anyio = "^4.15.1"
 
 [tool.poetry.group.tracking]
 optional = true
 
 [tool.poetry.group.tracking.dependencies]
 mlflow = "^3.1.1"
-starlette = "^0.50.0" #mlflow
-fonttools = "^4.60.1" #mlflow
+fonttools = "^4.60.1"
+
+[tool.poetry.group.native-runtime]
+optional = true
+
+[tool.poetry.group.native-runtime.dependencies]
+pymoo = ">=0.6.1,<0.7"
 
 [tool.poetry.group.docs]
 optional = true
@@ -109,15 +113,12 @@ addopts = "--ignore=tests/fuzz"
 markers = [
     "requires_ray: test needs a running Ray cluster",
     "requires_ipc: test needs real sockets or subprocesses (incomplete mocking)",
-    "requires_core: test runs the real core binary (not sandbox-compatible)",
+    "requires_amber: test runs a real search on the native amber runtime (skipped when it is not installed unless CIQ_REQUIRE_AMBER=1)",
 ]
 
 # Coverage configuration
 [tool.coverage.run]
 source = ["compileiq"]
-omit = [
-    "compileiq/core/executable/*",
-]
 
 [tool.coverage.report]
 show_missing = true
@@ -168,6 +169,10 @@ select = ["E", "F"]
 fixable = ["ALL"]
 unfixable = []
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$" # Allow unused variables when underscore-prefixed.
+
+[tool.ruff.lint.per-file-ignores]
+"examples/compilers/xla_ciq_example/src/xla_ciq/xla_ciq_bundle_pb2.py" = ["E501"]
+"examples/compilers/xla_ciq_example/tests/test_ptx_meta.py" = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -1,0 +1,21 @@
+{
+  "outputs": {
+    "native_runtime": {
+      "filename": "compileiq_native_runtime-1.1.0.dev0-cp311-cp311-macosx_15_0_arm64.whl",
+      "sha256": "sha256:4a2ecca335bd83e9904e16bef50385468628ce9de0c98732afc99d4a203c19d7",
+      "size": 1432132
+    }
+  },
+  "provenance": {
+    "job_id": 491942021,
+    "pipeline_id": 74423905,
+    "source_commit": "26400b8860d31347b89dda428af590c975df2b55"
+  },
+  "runtime": {
+    "abi_tag": "cp311",
+    "platform_tag": "macosx_15_0_arm64",
+    "python_tag": "cp311",
+    "wheel_tag": "cp311-cp311-macosx_15_0_arm64"
+  },
+  "schema_version": 1
+}

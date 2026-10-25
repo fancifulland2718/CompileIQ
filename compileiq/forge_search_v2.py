@@ -130,7 +130,7 @@ class ForgeOpaqueEvaluationContextV1(BaseModel):
 
 
 class ForgeOpaquePhysicalDuplicateV2(BaseModel):
-    """Stable alias to the bytewise-smallest recipe for one physical plan."""
+    """Stable alias under a declared physical-plan representative policy."""
 
     SCHEMA: ClassVar[str] = FORGE_OPAQUE_PHYSICAL_DUPLICATE_SCHEMA
 
@@ -142,6 +142,7 @@ class ForgeOpaquePhysicalDuplicateV2(BaseModel):
     physical_id: str
     alias_recipe_id: str
     representative_recipe_id: str
+    representative_policy: Literal["bytewise_smallest", "first_admitted_page"] = "bytewise_smallest"
 
     model_config = ConfigDict(
         extra="forbid",
@@ -156,7 +157,11 @@ class ForgeOpaquePhysicalDuplicateV2(BaseModel):
             _nonempty_text(getattr(self, name), field_name=name)
         if self.alias_recipe_id == self.representative_recipe_id:
             raise ValueError("physical duplicate alias must differ from its representative")
-        if self.representative_recipe_id.encode("utf-8") >= self.alias_recipe_id.encode("utf-8"):
+        if (
+            self.representative_policy == "bytewise_smallest"
+            and self.representative_recipe_id.encode("utf-8")
+            >= self.alias_recipe_id.encode("utf-8")
+        ):
             raise ValueError("physical duplicate representative must be bytewise smallest")
         return self
 
@@ -609,6 +614,20 @@ class ForgeOpaqueSearchResultV2:
         return no_worse and strictly_better
 
 
+class _RecipePageGroup:
+    """Read-only aggregation view; never passed to the bounded core codec."""
+
+    def __init__(self, pages):
+        self.last = pages[-1]
+        self.recipes = tuple(
+            {recipe.recipe_id: recipe for page in pages for recipe in page.recipes}.values()
+        )
+        self.recipe_ids = tuple(recipe.recipe_id for recipe in self.recipes)
+
+    def __getattr__(self, name):
+        return getattr(self.last, name)
+
+
 class ForgeOpaqueSearchSessionV2:
     """Budgeted, resumable, uncertainty-aware Pareto racing over batches."""
 
@@ -688,6 +707,8 @@ class ForgeOpaqueSearchSessionV2:
         )
         self._batches: list[OpaqueRecipeBatchV2] = []
         self._records: dict[str, TrialRecordV2] = {}
+        self._record_index = None
+        self._result_view = None
         self._stages: list[ForgeOpaqueStageResultV2] = []
         self._evaluation_count = 0
         self._elapsed_seconds = 0.0
@@ -729,7 +750,8 @@ class ForgeOpaqueSearchSessionV2:
         return {
             "core_commit": self._capability["core_commit"],
             "core_lock": self._capability["core_lock"],
-            "verification": "bundled_manifest_lock_at_search_start",
+            "verification": "python_scheduler_source_digest_at_search_start",
+            "execution_engine": self._capability["execution_engine"],
         }
 
     def _terminal_stage(self) -> ForgeOpaqueStageResultV2 | None:
@@ -741,6 +763,27 @@ class ForgeOpaqueSearchSessionV2:
         ]
         return terminal[-1] if terminal else None
 
+    def _terminal_complete(self, stage):
+        return (
+            stage is not None
+            and stage.complete
+            and next(
+                batch.page_final
+                for batch in self._batches
+                if batch.batch_fingerprint == stage.batch_fingerprint
+            )
+        )
+
+    def _result_batch(self):
+        if self._result_view is None:
+            last = self._batches[-1]
+            if last.page_group_fingerprint is None:
+                self._result_view = last
+            else:
+                pages = self._batches[-last.page_index - 1 :]
+                self._result_view = _RecipePageGroup(pages)
+        return self._result_view
+
     def _derive_status(self, reason: str) -> ForgeOpaqueSearchStatusV2:
         finalization = self._finalization
         generation_status = (
@@ -750,7 +793,7 @@ class ForgeOpaqueSearchSessionV2:
         inferred_terminal_fidelity = (
             "not_reached"
             if terminal_stage is None
-            else ("complete" if terminal_stage.complete else "partial")
+            else ("complete" if self._terminal_complete(terminal_stage) else "partial")
         )
         terminal_fidelity_status = (
             inferred_terminal_fidelity
@@ -783,7 +826,7 @@ class ForgeOpaqueSearchSessionV2:
 
         if not self._batches:
             evaluation_status = "not_started"
-        elif self._stages and self._stages[-1].complete:
+        elif self._stages and self._stages[-1].complete and self._batches[-1].page_final:
             evaluation_status = "complete"
         elif aggregates:
             evaluation_status = "partial"
@@ -860,10 +903,25 @@ class ForgeOpaqueSearchSessionV2:
         keys = tuple(item.request.measurement_key for item in checkpoint.records)
         if len(set(keys)) != len(keys):
             raise ValueError("checkpoint contains duplicate measurement keys")
-        self._batches = [item.model_copy(deep=True) for item in checkpoint.batches]
+        # Validate page continuity and lineage before accepting retained facts.
+        if len(checkpoint.batches) != len(checkpoint.stages) or any(
+            batch.batch_fingerprint != stage.batch_fingerprint
+            or batch.stage_index != stage.stage_index
+            for batch, stage in zip(checkpoint.batches, checkpoint.stages)
+        ):
+            raise ValueError("checkpoint has inconsistent batch/stage history")
+        stages = {item.batch_fingerprint: item for item in checkpoint.stages}
+        for batch in checkpoint.batches:
+            self._validate_batch(batch)
+            self._batches.append(batch.model_copy(deep=True))
+            if batch.batch_fingerprint not in stages:
+                raise ValueError("checkpoint batch has no stage evidence")
+            self._stages.append(stages[batch.batch_fingerprint].model_copy(deep=True))
+        self._result_view = None
         self._records = {
             item.request.measurement_key: item.model_copy(deep=True) for item in checkpoint.records
         }
+        self._record_index = None
         self._stages = [item.model_copy(deep=True) for item in checkpoint.stages]
         self._evaluation_count = checkpoint.evaluation_count
         self._elapsed_seconds = checkpoint.elapsed_seconds
@@ -921,19 +979,58 @@ class ForgeOpaqueSearchSessionV2:
                 raise ValueError("opaque recipe planned physical identity drifted across stages")
 
         if not self._batches:
-            if batch.stage_index != 0 or batch.parent_batch_fingerprint is not None:
+            if (
+                batch.stage_index != 0
+                or batch.parent_batch_fingerprint is not None
+                or batch.page_index
+            ):
                 raise ValueError("the first submitted batch must be stage zero")
             return
         previous = self._batches[-1]
         if batch.batch_fingerprint == previous.batch_fingerprint:
             return
-        if previous.fidelity.terminal:
-            raise ValueError("a terminal-fidelity batch must be the final search stage")
         if batch.stage_index != previous.stage_index + 1:
             raise ValueError("opaque batch stage indices must be contiguous")
         if batch.parent_batch_fingerprint != previous.batch_fingerprint:
             raise ValueError("opaque batch parent fingerprint mismatch")
-        previous_stage = self._stages[-1]
+        if batch.page_index:
+            if (
+                previous.page_final
+                or not batch.page_group_fingerprint
+                or batch.page_group_fingerprint != previous.page_group_fingerprint
+                or batch.page_index != previous.page_index + 1
+                or batch.fidelity != previous.fidelity
+            ):
+                raise ValueError("opaque recipe page continuity or fidelity drift")
+            if not self._stages[-1].complete:
+                raise ValueError("cannot advance an incomplete recipe page")
+            pages = self._batches[-batch.page_index :]
+            prior_ids = {recipe_id for page in pages for recipe_id in page.recipe_ids}
+            if (set(batch.recipe_ids) & prior_ids) - {self._baseline_recipe_id}:
+                raise ValueError("recipe occurs on more than one page")
+            first = pages[0]
+            if batch.recipe(self._baseline_recipe_id) != first.recipe(self._baseline_recipe_id):
+                raise ValueError("baseline description drifted between recipe pages")
+            if first.stage_index == 0:
+                if any(recipe.parent_recipe_ids for recipe in batch.recipes):
+                    raise ValueError("initial recipe pages must not declare parents")
+                return
+            previous_stage = next(
+                stage
+                for stage in self._stages
+                if stage.batch_fingerprint == first.parent_batch_fingerprint
+            )
+        else:
+            if not previous.page_final:
+                raise ValueError("cannot leave an unfinished recipe page group")
+            if previous.fidelity.terminal:
+                raise ValueError("a terminal-fidelity batch must be the final search stage")
+            if batch.page_group_fingerprint is not None and any(
+                page.page_group_fingerprint == batch.page_group_fingerprint
+                for page in self._batches
+            ):
+                raise ValueError("recipe page group identity was reused")
+            previous_stage = self._stages[-1]
         survivors = set(previous_stage.survivor_recipe_ids)
         for recipe in batch.recipes:
             if not set(recipe.parent_recipe_ids).issubset(survivors):
@@ -961,7 +1058,13 @@ class ForgeOpaqueSearchSessionV2:
                     groups.setdefault(physical_id, []).append(recipe_id)
         duplicates = []
         for physical_id, recipe_ids in groups.items():
-            ordered = sorted(recipe_ids, key=lambda item: item.encode("utf-8"))
+            # Across pages, keep the first admitted representative so a later
+            # alias cannot force another measurement of an already seen plan.
+            ordered = (
+                recipe_ids
+                if isinstance(batch, _RecipePageGroup)
+                else sorted(recipe_ids, key=lambda item: item.encode("utf-8"))
+            )
             representative = ordered[0]
             duplicates.extend(
                 ForgeOpaquePhysicalDuplicateV2(
@@ -969,6 +1072,11 @@ class ForgeOpaqueSearchSessionV2:
                     physical_id=physical_id,
                     alias_recipe_id=alias,
                     representative_recipe_id=representative,
+                    representative_policy=(
+                        "first_admitted_page"
+                        if isinstance(batch, _RecipePageGroup)
+                        else "bytewise_smallest"
+                    ),
                 )
                 for alias in ordered[1:]
             )
@@ -991,16 +1099,19 @@ class ForgeOpaqueSearchSessionV2:
         return tuple(recipe_id for recipe_id in batch.recipe_ids if recipe_id not in aliases)
 
     def _candidate_order(self, batch: OpaqueRecipeBatchV2) -> tuple[str, ...]:
+        group = self._result_batch()
         planned_aliases = {
             item.alias_recipe_id: item.representative_recipe_id
-            for item in self._physical_duplicates(batch, kind="planned")
+            for item in self._physical_duplicates(group, kind="planned")
         }
         baseline_representative = planned_aliases.get(
             self._baseline_recipe_id,
             self._baseline_recipe_id,
         )
         others = [
-            item for item in self._planned_representatives(batch) if item != baseline_representative
+            item
+            for item in batch.recipe_ids
+            if item not in planned_aliases and item != baseline_representative
         ]
         others.sort(
             key=lambda recipe_id: (
@@ -1010,7 +1121,8 @@ class ForgeOpaqueSearchSessionV2:
                 recipe_id,
             )
         )
-        return (baseline_representative, *others)
+        baseline = (baseline_representative,) if baseline_representative in batch.recipe_ids else ()
+        return (*baseline, *others)
 
     def _measurement_key(
         self,
@@ -1231,16 +1343,14 @@ class ForgeOpaqueSearchSessionV2:
         batch: OpaqueRecipeBatchV2,
         recipe_id: str,
     ) -> list[TrialRecordV2]:
-        fingerprint = batch.fidelity.fidelity_fingerprint
-        return sorted(
-            (
-                item
-                for item in self._records.values()
-                if item.request.recipe_id == recipe_id
-                and item.request.fidelity_fingerprint == fingerprint
-            ),
-            key=lambda item: item.request.observation_index,
-        )
+        if self._record_index is None:
+            self._record_index = {}
+            for item in self._records.values():
+                key = (item.request.recipe_id, item.request.fidelity_fingerprint)
+                self._record_index.setdefault(key, []).append(item)
+            for items in self._record_index.values():
+                items.sort(key=lambda item: item.request.observation_index)
+        return self._record_index.get((recipe_id, batch.fidelity.fidelity_fingerprint), ())
 
     def _aggregate_recipe(
         self,
@@ -1408,6 +1518,7 @@ class ForgeOpaqueSearchSessionV2:
         )
         if existing is None:
             self._batches.append(batch)
+            self._result_view = None
         elif existing != batch:
             raise ValueError("batch fingerprint collision with different batch contents")
 
@@ -1438,19 +1549,21 @@ class ForgeOpaqueSearchSessionV2:
             self._elapsed_seconds = self._elapsed()
             self._active_started_at = None
 
+        self._record_index = None
+        group = self._result_batch()
         measured_aggregates = [
             aggregate
-            for recipe_id in batch.recipe_ids
-            if (aggregate := self._aggregate_recipe(batch, recipe_id)) is not None
+            for recipe_id in group.recipe_ids
+            if (aggregate := self._aggregate_recipe(group, recipe_id)) is not None
         ]
-        planned_duplicates = self._physical_duplicates(batch, kind="planned")
-        materialized_duplicates = self._physical_duplicates(batch, kind="materialized")
+        planned_duplicates = self._physical_duplicates(group, kind="planned")
+        materialized_duplicates = self._physical_duplicates(group, kind="materialized")
         materialized_aliases = {item.alias_recipe_id for item in materialized_duplicates}
         aggregates = [
             item for item in measured_aggregates if item["recipe_id"] not in materialized_aliases
         ]
         evaluated_ids = tuple(item["recipe_id"] for item in measured_aggregates)
-        required_ids = set(self._planned_representatives(batch))
+        required_ids = set(self._planned_representatives(group))
         complete = (
             self._termination_reason != "poisoned"
             and all(item["complete"] for item in measured_aggregates)
@@ -1461,7 +1574,7 @@ class ForgeOpaqueSearchSessionV2:
             stage_index=batch.stage_index,
             fidelity_fingerprint=batch.fidelity.fidelity_fingerprint,
             evaluated_recipe_ids=evaluated_ids,
-            survivor_recipe_ids=self._survivors(batch, aggregates),
+            survivor_recipe_ids=self._survivors(group, aggregates),
             physical_duplicates=planned_duplicates + materialized_duplicates,
             complete=complete,
         )
@@ -1476,7 +1589,7 @@ class ForgeOpaqueSearchSessionV2:
     def _current_aggregates(self) -> list[dict[str, object]]:
         if not self._batches:
             return []
-        batch = self._batches[-1]
+        batch = self._result_batch()
         aggregates = [
             aggregate
             for recipe_id in batch.recipe_ids
@@ -1506,7 +1619,7 @@ class ForgeOpaqueSearchSessionV2:
         observed_status = (
             "not_reached"
             if terminal_stage is None
-            else ("complete" if terminal_stage.complete else "partial")
+            else ("complete" if self._terminal_complete(terminal_stage) else "partial")
         )
         if finalization.terminal_fidelity_status != observed_status:
             raise ValueError(
