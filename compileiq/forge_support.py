@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from compileiq.core.verify_core import MANIFEST_PATH, load_manifest, validate_core_lock
+from compileiq._forge_engine import ENGINE_NAME, ENGINE_VERSION, scheduler_identity
 from compileiq.recipes import (
     OPAQUE_DYNAMIC_RECIPE_DOMAIN_SCHEMA,
     OPAQUE_RECIPE_BATCH_SCHEMA,
@@ -28,8 +28,8 @@ from compileiq.utils.validation import Score
 FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA = "compileiq.taichi-forge-recipe-search-capability.v2"
 FORGE_OPAQUE_TARGET_CONTRACT_SCHEMA = "compileiq.taichi-forge-opaque-target-contract.v1"
 FORGE_RECIPE_SEARCH_FORK_BUILD_ID = "compileiq-taichi-forge-complete-recipes.v2"
-FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.0.0dev8+taichiforge.pages1"
-FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 6
+FORGE_RECIPE_SEARCH_PACKAGE_VERSION = "1.1.0b2+taichiforge.1"
+FORGE_RECIPE_SEARCH_PROTOCOL_REVISION = 7
 FORGE_RECIPE_SEARCH_CAPABILITY_ID_PREFIX = "ciq-forge-cap-v2:"
 
 
@@ -153,11 +153,11 @@ class ForgeRecipeSearchCapabilityV2(BaseModel):
     schema_id: Literal["compileiq.taichi-forge-recipe-search-capability.v2"] = Field(
         default=SCHEMA, alias="schema"
     )
-    protocol_revision: Literal[6] = FORGE_RECIPE_SEARCH_PROTOCOL_REVISION
+    protocol_revision: Literal[7] = FORGE_RECIPE_SEARCH_PROTOCOL_REVISION
     fork_build_id: Literal["compileiq-taichi-forge-complete-recipes.v2"] = (
         FORGE_RECIPE_SEARCH_FORK_BUILD_ID
     )
-    package_version: Literal["1.0.0dev8+taichiforge.pages1"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
+    package_version: Literal["1.1.0b2+taichiforge.1"] = FORGE_RECIPE_SEARCH_PACKAGE_VERSION
     opaque_recipe_domain_schema: Literal["compileiq.opaque-recipe-domain.v1"] = (
         OpaqueRecipeDomainV1.SCHEMA
     )
@@ -202,10 +202,10 @@ class ForgeRecipeSearchCapabilityV2(BaseModel):
     max_canonical_bytes: int = OpaqueRecipeDomainV1.MAX_CANONICAL_BYTES
     provider_recipe_ids_cross_core_boundary: Literal[False] = False
     core_verification: Literal[
-        "bundled_manifest_lock_and_platform_hashes_at_search_start_no_override"
-    ] = "bundled_manifest_lock_and_platform_hashes_at_search_start_no_override"
-    opaque_domain_binding: Literal["capability_id_core_commit_core_lock"] = (
-        "capability_id_core_commit_core_lock"
+        "python_scheduler_source_digest_at_search_start"
+    ] = "python_scheduler_source_digest_at_search_start"
+    opaque_domain_binding: Literal["capability_id_scheduler_source_lock"] = (
+        "capability_id_scheduler_source_lock"
     )
     objective_worker: Literal["forge_main_thread_serial_v1"] = "forge_main_thread_serial_v1"
     opaque_recipe_search: Literal["dynamic_batch_pareto_racing_main_thread_v2"] = (
@@ -218,6 +218,7 @@ class ForgeRecipeSearchCapabilityV2(BaseModel):
     core_manifest_schema_version: int
     core_commit: str
     core_lock: str
+    execution_engine: Literal["forge_complete_recipes_python_v1"] = ENGINE_NAME
     capability_id: str
 
     model_config = ConfigDict(
@@ -257,24 +258,17 @@ class ForgeRecipeSearchCapabilityV2(BaseModel):
 
 
 def forge_recipe_search_capability(
-    manifest_path: str | Path = MANIFEST_PATH,
+    source_root: Path | None = None,
 ) -> ForgeRecipeSearchCapabilityV2:
-    """Return a fail-closed capability bound to the packaged core manifest."""
+    """Return a capability bound to the actual Python recipe scheduler.
 
-    manifest = load_manifest(Path(manifest_path))
-    manifest_errors = validate_core_lock(manifest)
-    if manifest_errors:
-        raise RuntimeError("; ".join(manifest_errors))
-
-    schema_version = manifest.get("schema_version")
-    core_commit = manifest.get("core_commit")
-    core_lock = manifest.get("core_lock")
-    if isinstance(schema_version, bool) or not isinstance(schema_version, int):
-        raise RuntimeError("core manifest has no valid integer schema_version")
-    if not isinstance(core_commit, str) or not core_commit:
-        raise RuntimeError("core manifest has no valid core_commit")
-    if not isinstance(core_lock, str) or not core_lock.startswith("sha256:"):
-        raise RuntimeError("core manifest has no valid core_lock")
+    The V2 wire fields named core_* are retained as identity slots. In revision 7
+    they identify this scheduler, not an amber library or the removed IPC core.
+    """
+    manifest = scheduler_identity(source_root)
+    schema_version = manifest["schema_version"]
+    core_commit = "python:" + ENGINE_VERSION
+    core_lock = manifest["source_lock"]
 
     payload: dict[str, object] = {
         "schema": FORGE_RECIPE_SEARCH_CAPABILITY_SCHEMA,
@@ -299,9 +293,9 @@ def forge_recipe_search_capability(
         "max_canonical_bytes": OpaqueRecipeDomainV1.MAX_CANONICAL_BYTES,
         "provider_recipe_ids_cross_core_boundary": False,
         "core_verification": (
-            "bundled_manifest_lock_and_platform_hashes_at_search_start_no_override"
+            "python_scheduler_source_digest_at_search_start"
         ),
-        "opaque_domain_binding": "capability_id_core_commit_core_lock",
+        "opaque_domain_binding": "capability_id_scheduler_source_lock",
         "objective_worker": "forge_main_thread_serial_v1",
         "opaque_recipe_search": "dynamic_batch_pareto_racing_main_thread_v2",
         "opaque_recipe_search_v1": "bounded_exhaustive_main_thread_v1",
@@ -309,6 +303,7 @@ def forge_recipe_search_capability(
         "core_manifest_schema_version": schema_version,
         "core_commit": core_commit,
         "core_lock": core_lock,
+        "execution_engine": ENGINE_NAME,
     }
     return ForgeRecipeSearchCapabilityV2(
         **payload,
@@ -529,7 +524,8 @@ class ForgeOpaqueRecipeExhaustiveSearchV1:
         return {
             "core_commit": self._capability["core_commit"],
             "core_lock": self._capability["core_lock"],
-            "verification": "bundled_manifest_lock_at_search_start",
+            "verification": "python_scheduler_source_digest_at_search_start",
+            "execution_engine": ENGINE_NAME,
         }
 
     @property

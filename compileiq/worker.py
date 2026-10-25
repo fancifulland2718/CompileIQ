@@ -48,6 +48,40 @@ else:
     multiprocessing.set_start_method(mp_mode, force=True)
 
 
+class ManualWorker(Worker):
+    """Prevent CompileIQ from executing objectives during external ask/tell orchestration."""
+
+    @property
+    def supports_managed_execution(self) -> bool:
+        """Report that ``evaluate()`` and ``start()`` are intentionally unavailable."""
+        return False
+
+    @classmethod
+    def create(
+        cls,
+        cache_folder: str | os.PathLike,
+        normalize: bool,
+        tracker: BaseTracker | None,
+    ) -> "ManualWorker":
+        return cls(cache_folder=cache_folder, normalize=normalize, tracker=tracker)
+
+    def run(
+        self,
+        *,
+        function: Callable,
+        params_pool: Sequence[ParamArg],
+        params_ids: Sequence[int | str],
+        num_function_returns: int = 1,
+        num_workers: int = 1,
+        **kwargs,
+    ) -> List[Score]:
+        """Reject direct execution as a final guard around the manual workflow."""
+        raise RuntimeError(
+            "ManualWorker does not execute objective functions. Use Search.ask() and "
+            "Search.tell() to evaluate candidates externally."
+        )
+
+
 class MultiProcessWorker(Worker):
     """
     Worker that uses only existing python primitives.
@@ -95,7 +129,7 @@ class MultiProcessWorker(Worker):
         *,
         function: Callable,
         params_pool: Sequence[ParamArg],
-        params_ids: Sequence[int],
+        params_ids: Sequence[int | str],
         num_function_returns: int = 1,
         num_workers: int = 1,
         task_timeout: Optional[int | float] = None,
@@ -115,6 +149,9 @@ class MultiProcessWorker(Worker):
             params_pool:
                 A CompileIQ generated pool of parameters to be used as input for the objective
                 function. The parameters will respect the search space defined by the user.
+            params_ids:
+                Stable integer or string identifiers supplied by the search backend. Returned
+                non-baseline scores retain these associations for validation and checkpointing.
             num_function_returns:
                 The number of returns expected from the objective function.
             num_workers:
@@ -354,7 +391,7 @@ class IsoMultiProcessWorker(Worker):
         *,
         function: Callable,
         params_pool: Sequence[ParamArg],
-        params_ids: Sequence[int],
+        params_ids: Sequence[int | str],
         num_function_returns: int = 1,
         num_workers: int = 1,
         task_timeout: Optional[int | float] = None,
@@ -371,6 +408,9 @@ class IsoMultiProcessWorker(Worker):
             params_pool:
                 A CompileIQ generated pool of parameters to be used as input for the objective
                 function. The parameters will respect the search space defined by the user.
+            params_ids:
+                Stable integer or string identifiers supplied by the search backend. Returned
+                non-baseline scores retain these associations for validation and checkpointing.
             num_function_returns:
                 The number of returns expected from the objective function.
             num_workers:
@@ -791,7 +831,7 @@ class RayWorker(Worker):
         *,
         function: Callable,
         params_pool: Sequence[ParamArg],
-        params_ids: Sequence[int],
+        params_ids: Sequence[int | str],
         num_function_returns: int = 1,
         **ray_resources,
     ) -> List[Score]:
@@ -810,6 +850,9 @@ class RayWorker(Worker):
             params_pool:
                 A CompileIQ generated pool of parameters to be used as input for the objective
                 function. The parameters will respect the search space defined by the user.
+            params_ids:
+                Stable integer or string identifiers supplied by the search backend. Returned
+                non-baseline scores retain these associations for validation and checkpointing.
 
             num_function_returns:
                 The number of returns expected from the objective function.
@@ -1130,7 +1173,7 @@ class AsyncWorker(Worker):
         *,
         function: Callable,
         params_pool: Sequence[ParamArg],
-        params_ids: Sequence[int],
+        params_ids: Sequence[int | str],
         num_function_returns: int = 1,
         task_timeout: Optional[int | float] = None,
         **kwargs,
@@ -1144,6 +1187,9 @@ class AsyncWorker(Worker):
             params_pool:
                 A CompileIQ generated pool of parameters to be used as input for the objective
                 function. The parameters will respect the search space defined by the user.
+            params_ids:
+                Stable integer or string identifiers supplied by the search backend. Returned
+                non-baseline scores retain these associations for validation and checkpointing.
             num_function_returns:
                 The number of returns expected from the objective function.
 
@@ -1171,7 +1217,7 @@ class AsyncWorker(Worker):
         self,
         function: Callable,
         params_pool: Sequence[ParamArg],
-        params_ids: Sequence[int],
+        params_ids: Sequence[int | str],
         num_function_returns: int,
         task_timeout: Optional[int | float] = None,
         **kwargs,

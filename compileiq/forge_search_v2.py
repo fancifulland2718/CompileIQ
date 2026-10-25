@@ -750,7 +750,8 @@ class ForgeOpaqueSearchSessionV2:
         return {
             "core_commit": self._capability["core_commit"],
             "core_lock": self._capability["core_lock"],
-            "verification": "bundled_manifest_lock_at_search_start",
+            "verification": "python_scheduler_source_digest_at_search_start",
+            "execution_engine": self._capability["execution_engine"],
         }
 
     def _terminal_stage(self) -> ForgeOpaqueStageResultV2 | None:

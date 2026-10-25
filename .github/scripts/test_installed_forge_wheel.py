@@ -1,6 +1,6 @@
 """Run the existing Forge contracts against an installed wheel, never the checkout.
 
-Requires pytest and, on Python 3.10, tomli. The retained output contains the
+Requires pytest on a supported Python 3.11-3.14 interpreter. The retained output contains the
 installed-package provenance, copied contract fixtures, and a JUnit result.
 """
 
@@ -21,6 +21,7 @@ CONTRACT_FILES = (
     "test_forge_support.py",
     "test_forge_search_v2.py",
     "test_forge_report.py",
+    "test_forge_recipe_pages.py",
 )
 SCHEMA_PATH = "schemas/opaque-optimization-report-v1.schema.json"
 
@@ -48,7 +49,7 @@ def main() -> int:
         "compileiq.forge_support",
         "compileiq.forge_search_v2",
         "compileiq.forge_report",
-        "compileiq.core.verify_core",
+        "compileiq._forge_engine",
     ):
         module = importlib.import_module(name)
         relative = name.replace(".", "/") + ".py"
@@ -58,21 +59,26 @@ def main() -> int:
             raise RuntimeError(f"Not an installed wheel module: {name}: {actual}")
         origins[name] = str(actual)
 
-    from compileiq.core.verify_core import verify
+    from compileiq._forge_engine import scheduler_identity
     from compileiq.forge_support import forge_recipe_search_capability
 
     capability = forge_recipe_search_capability().as_dict()
     if Version(distribution.version) != Version(capability["package_version"]):
         raise RuntimeError("Installed metadata and Forge capability package versions differ")
-    core = verify(required_platforms=())
-    if not core.ok:
-        raise RuntimeError(core.render())
+    identity = scheduler_identity()
+    if identity["source_lock"] != capability["core_lock"]:
+        raise RuntimeError("Scheduler source identity mismatch")
     if SCHEMA_PATH not in recorded_files:
         raise RuntimeError("The installed wheel does not contain the optimization report schema")
 
     fixture_root = output / "fixtures"
     tests = fixture_root / "tests" / "unit"
     tests.mkdir(parents=True)
+    # Paging contracts reuse helpers from the staged search fixture. Make the
+    # copied tree a package so isolated pytest imports that sibling, not checkout
+    # code or an unrelated site-packages/tests module.
+    (tests.parent / "__init__.py").write_text("", encoding="utf-8")
+    (tests / "__init__.py").write_text("", encoding="utf-8")
     for filename in CONTRACT_FILES:
         shutil.copy2(source / "tests" / "unit" / filename, tests / filename)
     # These two fixtures are consumed by existing source/metadata consistency
@@ -88,8 +94,8 @@ def main() -> int:
         "package_version": distribution.version,
         "module_origins": origins,
         "core_lock": capability["core_lock"],
-        "core_platforms": core.platforms,
-        "core_verified_files": core.matches,
+        "execution_engine": capability["execution_engine"],
+        "scheduler_source_files": identity["files"],
         "contracts": list(CONTRACT_FILES),
     }
     (output / "environment.json").write_text(
@@ -118,14 +124,14 @@ def main() -> int:
         env=environment,
         check=True,
     )
-    # Retain the existing actual-core smoke alongside the broader contracts.
+    # Retain the existing actual amber smoke alongside the broader contracts.
     subprocess.run(
         [sys.executable, "-I", str(source / ".github/scripts/smoke_test_compileiq_wheel.py")],
         cwd=output,
         env=environment,
         check=True,
     )
-    print("Installed Forge contracts and bundled-core search passed", flush=True)
+    print("Installed Forge contracts and amber search passed", flush=True)
     return 0
 
 

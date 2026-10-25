@@ -1,0 +1,21 @@
+{
+  "outputs": {
+    "native_runtime": {
+      "filename": "compileiq_native_runtime-1.1.0.dev0-cp314-cp314-linux_x86_64.whl",
+      "sha256": "sha256:ce19682be2c6529fc0bd187e6fe456155aecc1b7411df2a31b10f8ef3802e9c1",
+      "size": 1810070
+    }
+  },
+  "provenance": {
+    "job_id": 491942016,
+    "pipeline_id": 74423905,
+    "source_commit": "26400b8860d31347b89dda428af590c975df2b55"
+  },
+  "runtime": {
+    "abi_tag": "cp314",
+    "platform_tag": "linux_x86_64",
+    "python_tag": "cp314",
+    "wheel_tag": "cp314-cp314-linux_x86_64"
+  },
+  "schema_version": 1
+}

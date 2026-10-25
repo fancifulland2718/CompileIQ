@@ -1,24 +1,47 @@
-import socket
-import subprocess
-from unittest.mock import MagicMock
+import os
+
 import pytest
-import random
-import json
-from uuid import uuid4
-from tests.utils import generate_params
-from compileiq.ciq import Search
-from compileiq.core.core_types import ParameterSet, CompletionMessage, SingleCandidate
-from compileiq.utils.helpers import _encode_for_core
+from tests.utils import SCRIPTED_ENGINE, ScriptedBackend
 import compileiq.search_spaces.base as ss
+from compileiq.backends import (
+    BackendArtifactInfo,
+    BackendCapabilities,
+    BackendError,
+    get_backend_registration,
+    register_backend,
+    unregister_backend,
+)
 
 
-def pytest_configure():
-    pytest.current_gen = 0
-    pytest.max_gen = 0
-    pytest.pool_size = 0
-    pytest.nested_test = False
-    # this is for base64 encoding to handle serialization issues (not binary blobs)
-    pytest.encoded_knobs = True
+def _amber_installed() -> bool:
+    """Return whether the native amber runtime can register in this environment."""
+
+    try:
+        get_backend_registration("amber")
+    except BackendError:
+        return False
+    return True
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip real-engine tests when amber is absent, unless CI requires it.
+
+    CI jobs that install the native runtime set ``CIQ_REQUIRE_AMBER=1`` so a
+    missing or broken payload fails these tests instead of silently skipping them.
+    """
+
+    del config
+    marked = [item for item in items if item.get_closest_marker("requires_amber") is not None]
+    if not marked or os.environ.get("CIQ_REQUIRE_AMBER") == "1" or _amber_installed():
+        return
+    skip = pytest.mark.skip(
+        reason=(
+            "the native amber runtime is not installed (run `make install`); "
+            "set CIQ_REQUIRE_AMBER=1 to fail instead of skipping"
+        )
+    )
+    for item in marked:
+        item.add_marker(skip)
 
 
 @pytest.fixture
@@ -50,89 +73,46 @@ def sandbox_cache_dir(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def mock_core_start(monkeypatch):
-    def mock_start(*args, **kwargs):
-        mock_proc = MagicMock(spec=subprocess.Popen)
-        mock_proc.poll.return_value = 0
-        return mock_proc
+def scripted_engine():
+    """Register ``ScriptedBackend`` and yield the engine name to pass as ``engine=``."""
 
-    monkeypatch.setattr("compileiq.ciq.CoreIPC.start", mock_start)
-
-
-@pytest.fixture
-def mock_socket_listen(monkeypatch):
-    mock_sock = MagicMock(spec=socket.socket)
-    mock_sock.accept.return_value = (MagicMock(spec=socket.socket), ("localhost", 0))
-    mock_sock.getsockname.return_value = ("localhost", 0)
-    monkeypatch.setattr(
-        Search.__private_attributes__["_listen_socket"],
-        "default_factory",
-        lambda: mock_sock,
+    register_backend(
+        SCRIPTED_ENGINE,
+        ScriptedBackend,
+        capabilities=BackendCapabilities(arbitrary_batch_size=True),
+        artifact=BackendArtifactInfo(
+            backend_version="test",
+            abi_version=0,
+            artifact_sha256="0" * 64,
+        ),
+        replace=True,
     )
+    try:
+        yield SCRIPTED_ENGINE
+    finally:
+        unregister_backend(SCRIPTED_ENGINE)
 
 
-@pytest.fixture
-def mock_send_to_core(monkeypatch):
-    def mock_send(*args, **kwargs):
-        pass
-
-    monkeypatch.setattr("compileiq.ciq.CoreIPC.send_to_core", mock_send)
-
-
-@pytest.fixture
-def mock_receive_from_core(monkeypatch):
-    def mock_receive(*args, **kwargs):
-        # `pool_size`, `max_gen` and `current_gen` come from `pytest_namespace()`
-        # and are updated at the test function
-        if pytest.current_gen < pytest.max_gen:
-            candidate_list = []
-            params = generate_params(pytest.pool_size, nested=pytest.nested_test)
-            for knob in params:
-                encoded_knob = (
-                    {
-                        "_".join(map(_encode_for_core, key.split("_"))): val
-                        for key, val in knob.items()
-                    }
-                    if isinstance(knob, dict) and pytest.encoded_knobs
-                    else knob
-                )
-                candidate_list.append(
-                    SingleCandidate(
-                        id=random.randint(1, 1000000),
-                        knobs=json.dumps(encoded_knob),
-                    )
-                )
-            param_set = ParameterSet(
-                params=candidate_list,
-                generation_num=pytest.current_gen,
-                invocation_id=uuid4().int,
-            )
-            pytest.current_gen += 1
-
-            return param_set
-        else:
-            return CompletionMessage(complete=True)
-
-    monkeypatch.setattr("compileiq.ciq.CoreIPC.receive_from_core", mock_receive)
+def _collected_tests_require_ray(items):
+    return any(item.get_closest_marker("requires_ray") is not None for item in items)
 
 
 @pytest.fixture(autouse=True, scope="session")
-def manage_ray():
-    try:
-        import os
-        import ray
+def manage_ray(request):
+    # Do not start Ray for unrelated tests. A failed Ray startup can leave child
+    # processes behind after pytest reports success, causing the job to exit 143.
+    if not _collected_tests_require_ray(request.session.items):
+        yield
+        return
 
-        if not ray.is_initialized():
-            ray.init(_temp_dir=os.environ.get("RAY_TMPDIR"), ignore_reinit_error=True)
-    except ImportError:
-        pass
-    except Exception:
-        pass
-    yield
-    try:
-        import ray
+    import os
+    import ray
 
-        if ray.is_initialized():
+    started_ray = not ray.is_initialized()
+    if started_ray:
+        ray.init(_temp_dir=os.environ.get("RAY_TMPDIR"), ignore_reinit_error=True)
+    try:
+        yield
+    finally:
+        if started_ray and ray.is_initialized():
             ray.shutdown()
-    except ImportError:
-        pass

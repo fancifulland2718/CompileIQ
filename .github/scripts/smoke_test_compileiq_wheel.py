@@ -175,7 +175,7 @@ def main():
     assert_imported_from_wheel()
     assert_forge_v2_checkpoint_resume()
 
-    result = Search(
+    search = Search(
         objective_function=objective,
         search_space={
             "x": ss.range(start=1.0, end=20.0, step=0.5),
@@ -184,13 +184,15 @@ def main():
         search_config=SearchConfiguration(
             generations=1,
             pool_size=8,
-            cull_size=4,
             problem_type="min",
             num_objectives=1,
         ),
         cache_folder=Path.cwd() / "compileiq-wheel-smoke-cache",
         disable_progress_bar=True,
-    ).start()
+    )
+    # The default engine is the native runtime.
+    assert search.provider == "amber", search.provider
+    result = search.start()
 
     df = result.get_results()
     best = result.get_best_result()

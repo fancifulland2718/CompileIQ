@@ -17,7 +17,7 @@ The current protocol is composed from these public models:
 
 - `OpaqueDynamicRecipeDomainV2` freezes the provider registry, generation
   domain, assembly protocols, recipe schema, search strategy, capability, and
-  bundled-core identity for one session.
+  scheduler implementation identity for one session.
 - `OpaqueRecipeBatchV2` submits one canonical stage. Every entry is an
   `OpaqueRecipeLineageV2` with a complete recipe ID, planned physical ID,
   immediate parents, and optional materialized-memory estimate.
@@ -33,10 +33,22 @@ The current protocol is composed from these public models:
   contains batches, measurement keys, structured outcomes, stage results,
   status, and optional finalization.
 
-Provider recipe identifiers never cross the encrypted core boundary. Each
-batch is compiled through the existing `OpaqueRecipeDomainV1` ordinal-token
-codec; the Python layer validates the token and restores the provider-owned ID
-before the objective runs.
+The V2 complete-recipe scheduler runs in Python on the caller's main thread;
+it does not call the native `amber` engine. Capability revision 7 identifies it
+as `forge_complete_recipes_python_v1`, and hashes the installed scheduler sources
+at the cold session boundary. The existing `core_commit` and `core_lock` wire
+fields now carry that implementation version and source digest, respectively;
+they do not claim a native binary or an upstream commit identity. Capability and
+checkpoint identities include these facts, so a changed scheduler cannot reuse
+an old checkpoint silently. Revision 6 checkpoints require the older fork.
+
+Ordinary compiler-control `Search` uses upstream 1.1's native `amber` ask/tell
+engine. The optional V1 `Search` adapter sends only validated ordinal tokens to
+that engine and restores provider-owned recipe IDs before calling the objective.
+Its provenance reports the proposal engine separately from the Forge contract.
+Both paths are delivered in the fork's complete platform wheel; Python 3.11–3.14
+is required. This migration neither enables tuning by default nor changes Forge's
+ordinary execution, workspace ownership, or retry policy.
 
 The V1 fixed-domain exhaustive API remains available for compatibility. New
 Forge integrations should use V2 because V1 cannot express survivor-driven

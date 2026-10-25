@@ -116,15 +116,14 @@ def test_local_search_space_expands_user(tmp_path, monkeypatch):
     assert provider.retrieve() == target.resolve()
 
 
-def test_search_exposes_provider_resolution_metadata(
-    captured_resolve, mock_socket_listen, tmp_path
-):
+def test_search_exposes_provider_resolution_metadata(captured_resolve, scripted_engine, tmp_path):
     tuner = Search(
         objective_function=lambda _: 1.0,
         search_space=PtxasSearchSpace(version="13.3"),
         search_config=SearchConfiguration(generations=1, pool_size=6),
         cache_folder=tmp_path,
         worker_type=DummyWorker,
+        engine=scripted_engine,
     )
 
     metadata = tuner.search_space_resolution_metadata
@@ -135,13 +134,10 @@ def test_search_exposes_provider_resolution_metadata(
     assert metadata[0]["description"] == "ptxas 13.3 controls"
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Search validation intentionally rejects multiple config search spaces on Windows",
-)
 def test_search_resolves_provider_inside_mixed_search_space(
-    captured_resolve, mock_socket_listen, tmp_path
+    captured_resolve, scripted_engine, tmp_path
 ):
+    _, sentinel = captured_resolve
     user_space = {"block_size": {"type": "range", "min": 1, "max": 4}}
     tuner = Search(
         objective_function=lambda _: 1.0,
@@ -149,9 +145,10 @@ def test_search_resolves_provider_inside_mixed_search_space(
         search_config=SearchConfiguration(generations=1, pool_size=6),
         cache_folder=tmp_path,
         worker_type=DummyWorker,
+        engine=scripted_engine,
     )
 
-    assert tuner.search_space == [user_space, pathlib.Path("/tmp/sentinel.bin")]
+    assert tuner.search_space == [user_space, sentinel]
     assert tuner.search_space_resolution_metadata == [
         {
             "compiler": "ptxas",
@@ -164,17 +161,13 @@ def test_search_resolves_provider_inside_mixed_search_space(
             "sha256": "a" * 64,
             "size_bytes": 1,
             "source": "cache",
-            "path": "/tmp/sentinel.bin",
+            "path": str(sentinel),
         }
     ]
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Search validation intentionally rejects multiple config search spaces on Windows",
-)
 def test_search_exposes_metadata_list_for_multiple_providers(
-    captured_resolve, mock_socket_listen, tmp_path
+    captured_resolve, scripted_engine, tmp_path
 ):
     tuner = Search(
         objective_function=lambda _: 1.0,
@@ -182,6 +175,7 @@ def test_search_exposes_metadata_list_for_multiple_providers(
         search_config=SearchConfiguration(generations=1, pool_size=6),
         cache_folder=tmp_path,
         worker_type=DummyWorker,
+        engine=scripted_engine,
     )
 
     metadata = tuner.search_space_resolution_metadata
